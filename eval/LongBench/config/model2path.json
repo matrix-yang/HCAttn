@@ -1,0 +1,7 @@
+{
+    "Llama-2-7B-32K-Instruct": "/data1/ydq/model_zoo/Llama-2-7B-32K-Instruct",
+    "Mistral-7B-Instruct-v0.2": "/data1/ydq/model_zoo/Mistral-7B-Instruct-v0.2",
+    "Mistral-7B-Instruct-v0.3": "/data1/ydq/model_zoo/Mistral-7B-Instruct-v0.3",
+    "Llama-3-8B-Instruct-Gradient-1048k": "/data1/ydq/model_zoo/Llama-3-8B-Instruct-Gradient-1048k",
+    "Meta-Llama-3.1-8B-Instruct": "/data1/ydq/model_zoo/Meta-Llama-3.1-8B-Instruct"
+}

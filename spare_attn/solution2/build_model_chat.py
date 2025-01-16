@@ -1,0 +1,121 @@
+import sys
+
+sys.path.append('/nfs/hw-data/ms/FM/ydq/kvcache/duo-attention/')
+import os
+
+os.environ['CUDA_VISIBLE_DEVICES'] = "3"
+
+import torch
+import json
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    GenerationConfig,
+)
+from tqdm import tqdm
+import numpy as np
+import random
+import argparse
+
+from duo_attn.patch import enable_duo_attention_eval
+
+from duo_attn.utils import (
+    to_device,
+    load_attn_pattern,
+    sparsify_attention_heads,
+)
+from duo_attn.patch.tuple_kv_cache import enable_tuple_kv_cache, enable_tuple_kv_cache_for_llama
+import time
+
+
+def seed_everything(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.cuda.manual_seed_all(seed)
+
+
+def load_model_and_tokenizer(path):
+    tokenizer = AutoTokenizer.from_pretrained(
+        path, trust_remote_code=True, use_fast=False
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        path,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
+        attn_implementation="eager",
+    )
+
+    generation_config = GenerationConfig.from_pretrained(path)
+    eos_token_ids = generation_config.eos_token_id
+    if not isinstance(eos_token_ids, list):
+        eos_token_ids = [eos_token_ids]
+
+    model = model.eval()
+    return model, tokenizer, eos_token_ids
+
+from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
+from spare_attn.solution2.simulation_quant_k import Quanter
+
+
+class LLamaChat:
+    def __init__(self,model_path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7b-chat-hf/'):
+        seed_everything(42)
+        device_list = [0]
+        # llama_model2path='/data1/ydq/model_zoo/Llama-2-7B-32K-Instruct'
+        self.model_path=model_path
+        model, tokenizer, eos_token_ids = load_model_and_tokenizer(model_path)
+        enable_llama_approx_attention_eval(model)
+        self.model = to_device(model, device_list, enable_tp=True)
+        self.tokenizer = tokenizer
+        self.eos_token_ids = eos_token_ids
+        self.quanter = Quanter()
+
+    def chat(self, prompt, max_gen=2, decoding_simulation_length=1):
+        #prompt = build_chat(prompt)
+        input = self.tokenizer(prompt, truncation=False, return_tensors="pt").to("cuda")
+        simulation_start_idx = input.input_ids.shape[-1] - decoding_simulation_length
+        with torch.no_grad():
+            output = self.model(
+                input_ids=input.input_ids[:, :simulation_start_idx],
+                past_key_values=None,
+                use_cache=True,
+            )
+            past_key_values = output.past_key_values
+            # 压缩
+            # s = time.time()
+            past_key_values=self.quanter.quant(past_key_values)
+            # e = time.time()
+            # print('----------',e-s)
+            if decoding_simulation_length > 0:
+                for idx, input_id in enumerate(input.input_ids[0, simulation_start_idx:]):
+                    output = self.model(
+                        input_ids=input_id.unsqueeze(0).unsqueeze(0),
+                        past_key_values=past_key_values,
+                        use_cache=True,
+                    )
+                    past_key_values = output.past_key_values
+            logit = output.logits[:, -1, :]
+            pred_token_idx = logit.argmax(dim=-1).unsqueeze(1)
+            generated_content = [pred_token_idx.item()]
+            generated_logits = [logit.detach().cpu().numpy()]
+            for _ in range(max_gen - 1):
+                outputs = self.model(
+                    input_ids=pred_token_idx,
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
+                past_key_values = outputs.past_key_values
+                logit = outputs.logits[:, -1, :]
+                pred_token_idx = logit.argmax(dim=-1).unsqueeze(1)
+                generated_content += [pred_token_idx.item()]
+                generated_logits += [logit.detach().cpu().numpy()]
+                if pred_token_idx.item() in self.eos_token_ids:
+                    break
+
+        pred = self.tokenizer.decode(generated_content, skip_special_tokens=True)
+        return pred, generated_logits
