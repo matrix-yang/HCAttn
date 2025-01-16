@@ -118,7 +118,7 @@ if __name__ == '__main__':
             choice = choices[j]
             test_df["{}_choice{}_probs".format(engine, choice)] = probs[:, j]
         test_df.to_csv(os.path.join(save_dir, "results_{}".format(engine), "{}.csv".format(subject)), index=None)
-        print("ues cache radio: {:.5f}".np.mean(llama_chat.radio_bag))
+        print("ues cache radio: {:.5f}".format(np.mean(llama_chat.radio_bag)))
     weighted_acc = np.mean(np.concatenate(all_cors))
     print("Average accuracy: {:.3f}".format(weighted_acc))
-    print("Average ues cache radio: {:.5f}".np.mean(llama_chat.radio_bag))
+    print("Average ues cache radio: {:.5f}".format(np.mean(llama_chat.radio_bag)))

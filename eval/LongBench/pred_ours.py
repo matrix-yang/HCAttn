@@ -29,26 +29,9 @@ def parse_args(args=None):
         type=str,
         default=None,
     )
-
     parser.add_argument("--task", type=str, help="task name",default="none")
-
-    parser.add_argument(
-        "--method",
-        type=str,
-        default="full",
-    )
-
-    # duo attention
-    parser.add_argument(
-        "--attn_load_dir", type=str, default=None, help="attention pattern directory"
-    )
-    parser.add_argument("--sink_size", type=int, default=None)
-    parser.add_argument("--recent_size", type=int, default=None)
-
-    parser.add_argument("--sparsity", type=float, default=0.5)
-
     parser.add_argument("--decoding_simulation_length", type=int, default=0)
-
+    parser.add_argument("--attn_sum", type=float, default=0.5)
     return parser.parse_args(args)
 
 
@@ -57,7 +40,6 @@ def build_chat(tokenizer, prompt, model_name):
     if "llama-2" in model_name:
         prompt = f"[INST]{prompt}[/INST]"
     return prompt
-
 
 def post_process(response, model_name):
     if "xgen" in model_name:
@@ -83,16 +65,17 @@ def post_process(response, model_name):
 
 
 def get_pred(
-    model,
-    tokenizer,
-    eos_token_ids,
-    data,
-    max_length,
-    max_gen,
-    prompt_format,
-    dataset,
-    model_name,
-    decoding_simulation_length,
+        model,
+        tokenizer,
+        eos_token_ids,
+        data,
+        max_length,
+        max_gen,
+        prompt_format,
+        dataset,
+        model_name,
+        decoding_simulation_length,
+        quanter
 ):
     preds = []
     pbar = tqdm(data)
@@ -118,9 +101,7 @@ def get_pred(
             prompt = build_chat(tokenizer, prompt, model_name)
 
         input = tokenizer(prompt, truncation=False, return_tensors="pt").to("cuda")
-        pbar.set_description(
-            f"Generating for {idx}, len = {input.input_ids.shape[-1]}"
-        )
+        pbar.set_description(f"Generating for {idx}, len = {input.input_ids.shape[-1]}")
         simulation_start_idx = input.input_ids.shape[-1] - decoding_simulation_length
         with torch.no_grad():
             output = model(
@@ -129,9 +110,10 @@ def get_pred(
                 use_cache=True,
             )
             past_key_values = output.past_key_values
+            past_key_values = quanter.quant(past_key_values)
             if decoding_simulation_length > 0:
                 for idx, input_id in enumerate(
-                    input.input_ids[0, simulation_start_idx:]
+                        input.input_ids[0, simulation_start_idx:]
                 ):
                     output = model(
                         input_ids=input_id.unsqueeze(0).unsqueeze(0),
@@ -153,6 +135,7 @@ def get_pred(
                 generated_content += [pred_token_idx.item()]
                 if pred_token_idx.item() in eos_token_ids:
                     break
+
 
         pred = tokenizer.decode(generated_content, skip_special_tokens=True)
         pred = post_process(pred, model_name)
@@ -177,56 +160,7 @@ def seed_everything(seed):
     torch.backends.cudnn.deterministic = True
     torch.cuda.manual_seed_all(seed)
 
-
-def load_model_and_tokenizer(path, model_name):
-    tokenizer = AutoTokenizer.from_pretrained(
-        path, trust_remote_code=True, use_fast=False
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        path,
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-        low_cpu_mem_usage=True,
-        attn_implementation="eager",
-    )
-
-    generation_config = GenerationConfig.from_pretrained(path)
-    eos_token_ids = generation_config.eos_token_id
-    if not isinstance(eos_token_ids, list):
-        eos_token_ids = [eos_token_ids]
-
-    model = model.eval()
-
-    if args.method == "duo_attn":
-        assert args.attn_load_dir is not None, "attn_load_dir must be provided"
-        print(
-            f"Loading attention pattern from {args.attn_load_dir} with sparsity {args.sparsity}"
-        )
-        full_attention_heads, sink_size, recent_size = load_attn_pattern(
-            args.attn_load_dir
-        )
-
-        if args.sink_size is not None:
-            sink_size = args.sink_size
-        if args.recent_size is not None:
-            recent_size = args.recent_size
-
-        full_attention_heads, sparsity = sparsify_attention_heads(
-            full_attention_heads, None, sparsity=args.sparsity
-        )
-        print(f"True sparsity: {sparsity}")
-
-        enable_duo_attention_eval(
-            model,
-            full_attention_heads,
-            sink_size,
-            recent_size,
-        )
-    else:
-        enable_tuple_kv_cache(model)
-
-    return model, tokenizer, eos_token_ids
-
+from spare_attn.solution2.build_model_chat import LLamaChat
 
 if __name__ == "__main__":
     seed_everything(42)
@@ -236,13 +170,18 @@ if __name__ == "__main__":
     device_list = [i for i in range(torch.cuda.device_count())]
     model_name = args.model
     # define your model
-    model, tokenizer, eos_token_ids = load_model_and_tokenizer(
-        model2path[model_name], model_name
-    )
-    model = to_device(model, device_list, enable_tp=True)
-
+    model_path = model2path[model_name]
+    attn_sum = args.attn_sum
+    llama_chat = LLamaChat(model_path, attn_sum, '/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy')
+    model = llama_chat.model
+    tokenizer = llama_chat.tokenizer
+    eos_token_ids = llama_chat.eos_token_ids
+    # model, tokenizer, eos_token_ids = load_model_and_tokenizer(
+    #     model2path[model_name], model_name
+    # )
+    # model = to_device(model, device_list, enable_tp=True)
     max_length = model2maxlen[model_name]
-    if args.task=='none':
+    if args.task == 'none':
         datasets = [
             "qasper",
             "multifieldqa_en",
@@ -270,14 +209,10 @@ if __name__ == "__main__":
         os.makedirs("eval/LongBench/pred_e")
     for dataset in datasets:
         lb_path = '/ms/FM/ydq/kvcache/duo-attention/THUDM/LongBench/LongBench.py'
-        print(dataset)
         data = load_dataset(lb_path, dataset, split="test")
         if not os.path.exists(f"eval/LongBench/pred/{model_name}"):
             os.makedirs(f"eval/LongBench/pred/{model_name}")
-        if args.method == "duo_attn":
-            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-duo_attn-pattern-{args.attn_load_dir.split('/')[-1]}-sp-{args.sparsity}.jsonl"
-        else:
-            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-full.jsonl"
+        out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}.jsonl"
         prompt_format = dataset2prompt[dataset]
         max_gen = dataset2maxlen[dataset]
         preds = get_pred(
@@ -291,8 +226,11 @@ if __name__ == "__main__":
             dataset,
             model_name,
             args.decoding_simulation_length,
+            quanter=llama_chat.quanter
         )
+        print("{} ues cache radio: {:.5f}".format(dataset,np.mean(llama_chat.radio_bag)))
         with open(out_path, "w", encoding="utf-8") as f:
             for pred in preds:
                 json.dump(pred, f, ensure_ascii=False)
                 f.write("\n")
+    print("Average ues cache radio: {:.5f}".format(np.mean(llama_chat.radio_bag)))
