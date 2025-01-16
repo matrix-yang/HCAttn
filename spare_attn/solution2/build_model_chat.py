@@ -1,10 +1,5 @@
 import sys
-
 sys.path.append('/nfs/hw-data/ms/FM/ydq/kvcache/duo-attention/')
-import os
-
-os.environ['CUDA_VISIBLE_DEVICES'] = "3"
-
 import torch
 import json
 from transformers import (
@@ -63,17 +58,19 @@ from spare_attn.solution2.simulation_quant_k import Quanter
 
 
 class LLamaChat:
-    def __init__(self,model_path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7b-chat-hf/'):
+    def __init__(self,model_path,attn_sum,quant_path):
         seed_everything(42)
         device_list = [0]
-        # llama_model2path='/data1/ydq/model_zoo/Llama-2-7B-32K-Instruct'
+        #model_path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7b-chat-hf'
+        # llama_model2path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7B-32K-Instruct'
         self.model_path=model_path
+        self.radio_bag=[]
         model, tokenizer, eos_token_ids = load_model_and_tokenizer(model_path)
-        enable_llama_approx_attention_eval(model)
+        enable_llama_approx_attention_eval(model,attn_sum=attn_sum,radio_bag=self.radio_bag)
         self.model = to_device(model, device_list, enable_tp=True)
         self.tokenizer = tokenizer
         self.eos_token_ids = eos_token_ids
-        self.quanter = Quanter()
+        self.quanter = Quanter(quant_path)
 
     def chat(self, prompt, max_gen=2, decoding_simulation_length=1):
         #prompt = build_chat(prompt)

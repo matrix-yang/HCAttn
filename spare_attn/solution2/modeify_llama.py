@@ -3,8 +3,7 @@ import os
 import torch
 from torch import nn
 import types
-from duo_attn.patch.tuple_kv_cache import enable_tuple_kv_cache,enable_tuple_kv_cache_for_llama
-
+from duo_attn.patch.tuple_kv_cache import enable_tuple_kv_cache, enable_tuple_kv_cache_for_llama
 
 from transformers.models.llama.modeling_llama import (
     LlamaForCausalLM,
@@ -19,9 +18,8 @@ from transformers.models.llama.modeling_llama import (
 )
 from flash_attn import flash_attn_func, flash_attn_with_kvcache
 
-radios = []
 
-def decode_token(query_states_ori, key_states_ori, value_states_ori, sum_value=0.95):
+def decode_token(query_states_ori, key_states_ori, value_states_ori, sum_value, radio_bag):
     query_states = query_states_ori.transpose(1, 2).squeeze(0)
     key_states = key_states_ori.transpose(1, 2).squeeze(0)
     value_states = value_states_ori.transpose(1, 2).squeeze(0)
@@ -33,7 +31,7 @@ def decode_token(query_states_ori, key_states_ori, value_states_ori, sum_value=0
     # 获取降序排序的索引
     sorted_indices = torch.argsort(attention_probs, descending=True, dim=-1)
     # print(sorted_indices.shape)
-    search_index_ls = [16,32,64,96,128, 256, 384, 512, 768, attention_probs.shape[-1]]
+    search_index_ls = [16, 32, 64, 96, 128, 256, 384, 512, 768, attention_probs.shape[-1]]
     for i in search_index_ls:
         result = torch.gather(attention_probs, dim=-1, index=sorted_indices[:, :, :i])
         # print(result.shape,result.sum(-1))
@@ -45,8 +43,7 @@ def decode_token(query_states_ori, key_states_ori, value_states_ori, sum_value=0
     selected_indices = selected_indices.sort(dim=-1).values
     # print('selected_indices sort',selected_indices)
     # print('radio',i,key_states.shape[-2],i/key_states.shape[-2])
-    global radios
-    radios.append(i / key_states.shape[-2])
+    radio_bag.append(i / key_states.shape[-2])
     # 按原始顺序去除这些索引
     # print(len(selected_indices),selected_indices)
     # print(selected_indices.shape)
@@ -83,14 +80,38 @@ def decode_token_ori(query_states, key_states, value_states):
 
 
 def enable_llama_approx_attention_eval(
-        model: LlamaForCausalLM,
+        model: LlamaForCausalLM, attn_sum, radio_bag
 ):
     enable_tuple_kv_cache_for_llama(model)
+    new_forward = warp_forward(attn_sum, radio_bag)
     for idx, layer in enumerate(model.model.layers):
         module = layer.self_attn
         module.forward = types.MethodType(
-            llama_approx_attention_forward, module
+            new_forward, module
         )
+
+
+def warp_forward(attn_sum, radio_bag):
+    def new_func(self,
+                 hidden_states: torch.Tensor,
+                 attention_mask: Optional[torch.Tensor] = None,
+                 position_ids: Optional[torch.LongTensor] = None,
+                 past_key_value: Optional[Tuple[torch.Tensor]] = None,
+                 output_attentions: bool = False,
+                 use_cache: bool = False,
+                 **kwargs, ):
+        return llama_approx_attention_forward(self,
+                                              hidden_states,
+                                              attention_mask,
+                                              position_ids,
+                                              past_key_value,
+                                              output_attentions,
+                                              use_cache,
+                                              attn_sum=attn_sum,
+                                              radio_bag=radio_bag,
+                                              **kwargs)
+
+    return new_func
 
 
 def llama_approx_attention_forward(
@@ -101,6 +122,8 @@ def llama_approx_attention_forward(
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        attn_sum=0.95,
+        radio_bag=[],
         **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     bsz, q_len, _ = hidden_states.size()
@@ -140,7 +163,7 @@ def llama_approx_attention_forward(
         value_states = torch.cat([past_key_value[1].transpose(1, 2), value_states], dim=1)
         # torch.Size([1, 1344, 32, 128]) torch.Size([1, 1, 32, 128])
         # print(key_states.shape,query_states.shape)
-        attn_output = decode_token(query_states, key_states, value_states)
+        attn_output = decode_token(query_states, key_states, value_states, sum_value=attn_sum, radio_bag=radio_bag)
         # attn_output = flash_attn_func(
         #     query_states,
         #     key_states,
@@ -165,4 +188,3 @@ def llama_approx_attention_forward(
     if not output_attentions:
         attn_weights = None
     return attn_output, attn_weights, past_key_value
-

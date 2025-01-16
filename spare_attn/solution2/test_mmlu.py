@@ -5,8 +5,6 @@ import pandas as pd
 import time
 
 
-
-
 def softmax(x):
     z = x - max(x)
     numerator = np.exp(z)
@@ -43,10 +41,10 @@ def gen_prompt(train_df, subject, k=-1):
     return prompt
 
 
-def get_choices_idx(choices,tokenizer):
+def get_choices_idx(choices, tokenizer):
     words = choices
     word_ids = [tokenizer.encode(word, add_special_tokens=False) for word in words]
-    idxs=[]
+    idxs = []
     for word, word_id in zip(words, word_ids):
         idxs.append(word_id[0])
     return idxs
@@ -85,14 +83,18 @@ def eval(ntrain, subject, engine, dev_df, test_df, choices_idx, llama_chat):
 
 
 from spare_attn.solution2.build_model_chat import LLamaChat
-
+import sys
 
 if __name__ == '__main__':
-
-    llama_chat = LLamaChat()
+    model_path = sys.argv[1]
+    attn_sum = float(sys.argv[2])
+    quant_path = sys.argv[3]
+    print(f"use model : {model_path} \nattn : {attn_sum} \nquant_path : {quant_path}")
+    llama_chat = LLamaChat(model_path, attn_sum, quant_path)
     ntrain = 5
-    data_dir = '/nfs/hw-data/ms/FM/ydq/kvcache/mmlu/data'
-    save_dir = 'mmlu_results'
+    data_dir = '/ms/FM/ydq/kvcache/mmlu/data'
+    model_name=model_path.split('/')[-1]
+    save_dir = f'mmlu_results_{model_name}_attn{attn_sum}'
     engine = 'test'
     subjects = sorted([f.split("_test.csv")[0] for f in os.listdir(os.path.join(data_dir, "test")) if "_test.csv" in f])
     choices = ["A", "B", "C", "D"]
@@ -108,7 +110,7 @@ if __name__ == '__main__':
         dev_df = pd.read_csv(os.path.join(data_dir, "dev", subject + "_dev.csv"), header=None)[:ntrain]
         test_df = pd.read_csv(os.path.join(data_dir, "test", subject + "_test.csv"), header=None)
 
-        cors, acc, probs = eval(ntrain, subject, engine, dev_df, test_df, choices_idx,llama_chat)
+        cors, acc, probs = eval(ntrain, subject, engine, dev_df, test_df, choices_idx, llama_chat)
         all_cors.append(cors)
 
         test_df["{}_correct".format(engine)] = cors
@@ -116,5 +118,7 @@ if __name__ == '__main__':
             choice = choices[j]
             test_df["{}_choice{}_probs".format(engine, choice)] = probs[:, j]
         test_df.to_csv(os.path.join(save_dir, "results_{}".format(engine), "{}.csv".format(subject)), index=None)
+        print("ues cache radio: {:.5f}".np.mean(llama_chat.radio_bag))
     weighted_acc = np.mean(np.concatenate(all_cors))
     print("Average accuracy: {:.3f}".format(weighted_acc))
+    print("Average ues cache radio: {:.5f}".np.mean(llama_chat.radio_bag))

@@ -43,8 +43,8 @@ def rebuid_no_norm_k(key_tensor, gpu_index, vectors):
     return rebuild_kk
 
 class Quanter():
-    def __init__(self):
-        p = '/nfs/hw-data/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
+    def __init__(self,p):
+        #p = '/nfs/hw-data/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
         self.gpu_index, self.vectors = load_index(p)
 
     def quant(self,past_key_values):
