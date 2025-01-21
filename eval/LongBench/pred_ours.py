@@ -33,6 +33,7 @@ def parse_args(args=None):
     parser.add_argument("--decoding_simulation_length", type=int, default=0)
     parser.add_argument("--attn_sum", type=float, default=0.5)
     parser.add_argument("--no_quant", action="store_true")
+    parser.add_argument("--quant_path", type=str, default="none")
     return parser.parse_args(args)
 
 
@@ -116,9 +117,9 @@ def get_pred(
             if not args.no_quant:
                 # print('---------------use quant------------------')
                 past_key_values = quanter.quant(past_key_values)
-                #print('mem use before clear', torch.cuda.memory_allocated())
-                #torch.cuda.empty_cache()
-                #print('mem use after clear',torch.cuda.memory_allocated())
+                # print('mem use before clear', torch.cuda.memory_allocated())
+                # torch.cuda.empty_cache()
+                # print('mem use after clear',torch.cuda.memory_allocated())
             else:
                 pass
                 # print('---------------no quant------------------')
@@ -192,7 +193,11 @@ if __name__ == "__main__":
     # define your model
     model_path = model2path[model_name]
     attn_sum = args.attn_sum
-    llama_chat = LLamaChat(model_path, attn_sum, '/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy')
+    quant_path = args.quant_path
+    if quant_path is None:
+        quant_path = '/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
+    print(f'use quant {quant_path}')
+    llama_chat = LLamaChat(model_path, attn_sum, quant_path)
     model = llama_chat.model
     tokenizer = llama_chat.tokenizer
     eos_token_ids = llama_chat.eos_token_ids
@@ -235,7 +240,8 @@ if __name__ == "__main__":
         if not os.path.exists(f"eval/LongBench/pred/{model_name}"):
             os.makedirs(f"eval/LongBench/pred/{model_name}")
         if not args.no_quant:
-            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}.jsonl"
+            quant_name=quant_path.split('/')[-1][:-4]
+            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}_{quant_name}.jsonl"
         else:
             out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}-no_quant.jsonl"
 
