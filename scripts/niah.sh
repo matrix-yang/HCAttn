@@ -28,7 +28,7 @@ suffix="duo_attn-attn_pattern=${attn_pattern_name}-sparsity=${sparsity}"
         --sink_size 64 \
         --recent_size 256 \
         --prefilling_chunk_size 32000 \
-        --model_path ../../models/${model}
+        --model_path /ms/FM/ydq/kvcache/${model}
 ) 2>&1 | tee logs/eval_${model}_${suffix}.log
 
 python visualize.py \
