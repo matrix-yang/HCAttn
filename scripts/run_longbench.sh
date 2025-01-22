@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=7
+export CUDA_VISIBLE_DEVICES=0
 
 attn_pattern_name="lr=0.02-reg=0.05-ctx=1000_32000-multi_passkey10"
 models="Llama-2-7B-32K-Instruct Llama-3-8B-Instruct-Gradient-1048k"
