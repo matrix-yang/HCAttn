@@ -4,6 +4,7 @@ import torch
 from torch import nn
 import types
 from duo_attn.patch.tuple_kv_cache import enable_tuple_kv_cache, enable_tuple_kv_cache_for_llama
+import numpy as np
 
 from transformers.models.llama.modeling_llama import (
     LlamaForCausalLM,
@@ -20,21 +21,35 @@ from flash_attn import flash_attn_func, flash_attn_with_kvcache
 
 
 def decode_token(query_states_ori, key_states_ori, value_states_ori, sum_value, radio_bag):
+    if sum_value >= 1:
+        return decode_token_ori(query_states_ori, key_states_ori, value_states_ori)
+    #print('----ori', query_states_ori.shape, key_states_ori.shape)
     query_states = query_states_ori.transpose(1, 2).squeeze(0)
     key_states = key_states_ori.transpose(1, 2).squeeze(0)
     value_states = value_states_ori.transpose(1, 2).squeeze(0)
     # bsz 1 heads 32 seqlen 128
-    attention_scores = torch.bmm(query_states, key_states.transpose(-1, -2)) * 0.088388
+    # print('----------------',query_states.device,query_states.shape,query_states.device,key_states.shape)
+    q_heads = query_states.shape[0]
+    k_heads = key_states.shape[0]
+    if q_heads != k_heads:
+        # key_states=key_states.repeat(q_heads,1,1)
+        value_states = value_states.repeat(q_heads, 1, 1)
+    attention_scores = torch.matmul(query_states, key_states.transpose(-1, -2)) * 0.088388
+    #print('----------------', query_states.shape, key_states.shape, attention_scores.shape)
     # 32 1000
     attention_probs = torch.softmax(attention_scores, dim=-1, dtype=torch.float32).to(query_states.dtype)
     # print('attention_probs',attention_probs.shape)
     # 获取降序排序的索引
     sorted_indices = torch.argsort(attention_probs, descending=True, dim=-1)
     # print(sorted_indices.shape)
-    search_index_ls = [16, 32, 64, 96, 128, 256, 384, 512, 768, attention_probs.shape[-1]]
+    # search_index_ls = [16, 32, 64, 96, 128, 256, 384, 512, 768, attention_probs.shape[-1]]
+    step = int(attention_probs.shape[-1] / 100)
+    search_index_ls = np.arange(1, attention_probs.shape[-1], step)
+    search_index_ls = np.append(search_index_ls, attention_probs.shape[-1])
     for i in search_index_ls:
         result = torch.gather(attention_probs, dim=-1, index=sorted_indices[:, :, :i])
         # print(result.shape,result.sum(-1))
+        #print('----------', sorted_indices.shape, result.shape)
         if all(result.sum(-1) > sum_value):
             break
     selected_indices = sorted_indices[:, :, :i]
@@ -63,19 +78,27 @@ def decode_token(query_states_ori, key_states_ori, value_states_ori, sum_value, 
 
 
 def decode_token_ori(query_states, key_states, value_states):
-    query = query_states.transpose(1, 2)
-    key = key_states.transpose(1, 2)
-    value = value_states.transpose(1, 2)
-    # print(query_states.shape,key_states.shape)
-    # bsz 1 heads 32 seqlen 128
+    # query = query_states.transpose(1, 2)
+    # key = key_states.transpose(1, 2)
+    # value = value_states.transpose(1, 2)
+    # # print(query_states.shape,key_states.shape)
+    # # bsz 1 heads 32 seqlen 128
+    #
+    # attn_weights = torch.matmul(query, key.transpose(2, 3))
+    # attn_weights /= 11.3137
+    #
+    # # 32 1000
+    # attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+    # attn_output = torch.matmul(attn_weights, value)
+    # attn_output = attn_output.transpose(1, 2).contiguous()
 
-    attn_weights = torch.matmul(query, key.transpose(2, 3))
-    attn_weights /= 11.3137
-
-    # 32 1000
-    attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-    attn_output = torch.matmul(attn_weights, value)
-    attn_output = attn_output.transpose(1, 2).contiguous()
+    attn_output = flash_attn_func(
+        query_states,
+        key_states,
+        value_states,
+        causal=True,
+        dropout_p=0.0,
+    )
     return attn_output
 
 
@@ -163,6 +186,8 @@ def llama_approx_attention_forward(
         value_states = torch.cat([past_key_value[1].transpose(1, 2), value_states], dim=1)
         # torch.Size([1, 1344, 32, 128]) torch.Size([1, 1, 32, 128])
         # print(key_states.shape,query_states.shape)
+    #decode
+    if query_states.shape[1] == 1:
         attn_output = decode_token(query_states, key_states, value_states, sum_value=attn_sum, radio_bag=radio_bag)
         # attn_output = flash_attn_func(
         #     query_states,
