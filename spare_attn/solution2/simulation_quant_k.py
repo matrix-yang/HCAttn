@@ -2,11 +2,7 @@ import faiss
 import numpy as np
 import torch
 
-def load_index(path):
-    # 参数设置
-    dimension = 4
-    num_vectors = 1000
-    k = 5
+def load_index(path,dimension):
 
     index = faiss.IndexFlatL2(dimension)
     res = faiss.StandardGpuResources()
@@ -46,12 +42,12 @@ def rebuid_no_norm_k(key_tensor, gpu_index, vectors):
     # rebuild_kk=rebuild_kk*k_norms
     return rebuild_kk
 
-def batch_rebuid_no_norm_k(key_tensor, gpu_index, vectors):
+def batch_rebuid_no_norm_k(key_tensor, gpu_index, vectors,bits):
     k=key_tensor.cpu().to(torch.float).numpy()
     k_size = k.shape
     # k_norms=np.linalg.norm(k, ord=2, axis=-1,keepdims=True)
     # normlize_k=k/k_norms
-    low_k = k.reshape(-1, 4)
+    low_k = k.reshape(-1, bits)
     batch=32*32*32*1024
     all_indices=np.zeros(low_k.shape[0],dtype=np.int32)
     for i in range(0,low_k.shape[0],batch):
@@ -65,9 +61,10 @@ def batch_rebuid_no_norm_k(key_tensor, gpu_index, vectors):
 
 
 class Quanter():
-    def __init__(self,p):
+    def __init__(self,p,dims=4):
         #p = '/nfs/hw-data/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
-        self.gpu_index, self.vectors = load_index(p)
+        self.dims=dims
+        self.gpu_index, self.vectors = load_index(p,dims)
 
     def quant(self,past_key_values):
         #print('----------do_quant')
@@ -77,7 +74,7 @@ class Quanter():
         v = torch.cat([past_key_values[i][1] for i in range(32)])
         #print('k.shape',k.shape)
         #rbk = rebuid_no_norm_k(k, self.gpu_index, self.vectors)
-        rbk = batch_rebuid_no_norm_k(k, self.gpu_index, self.vectors)
+        rbk = batch_rebuid_no_norm_k(k, self.gpu_index, self.vectors,self.dims)
         del k
         torch.cuda.empty_cache()
         selected_k = torch.from_numpy(rbk).to(v.dtype).cuda()

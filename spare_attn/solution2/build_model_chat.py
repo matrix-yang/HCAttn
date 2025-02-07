@@ -58,7 +58,7 @@ from spare_attn.solution2.simulation_quant_k import Quanter
 
 
 class LLamaChat:
-    def __init__(self,model_path,attn_sum,quant_path,modify=True):
+    def __init__(self,model_path,attn_sum,quant_path,modify=True,dims=4):
         seed_everything(42)
         device_list = [0]
         #model_path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7b-chat-hf'
@@ -72,7 +72,7 @@ class LLamaChat:
         self.tokenizer = tokenizer
         self.eos_token_ids = eos_token_ids
         if quant_path:
-            self.quanter = Quanter(quant_path)
+            self.quanter = Quanter(quant_path,dims)
             self.is_quant=True
         else:
             self.is_quant = False

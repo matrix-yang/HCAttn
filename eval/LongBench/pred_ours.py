@@ -34,6 +34,7 @@ def parse_args(args=None):
     parser.add_argument("--attn_sum", type=float, default=0.5)
     parser.add_argument("--no_quant", action="store_true")
     parser.add_argument("--quant_path", type=str, default="none")
+    parser.add_argument("--quant_dims", type=int, default=4)
     return parser.parse_args(args)
 
 
@@ -196,8 +197,8 @@ if __name__ == "__main__":
     quant_path = args.quant_path
     if quant_path is None:
         quant_path = '/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
-    print(f'use quant {quant_path}')
-    llama_chat = LLamaChat(model_path, attn_sum, quant_path)
+    print(f'use quant {quant_path} quant dims {args.quant_dims}')
+    llama_chat = LLamaChat(model_path, attn_sum, quant_path,modify=True,dims=args.quant_dims)
     model = llama_chat.model
     tokenizer = llama_chat.tokenizer
     eos_token_ids = llama_chat.eos_token_ids
