@@ -100,7 +100,7 @@ if __name__ == '__main__':
     modify=False
     attn_sum = 1
 
-    llama_chat = LLamaChat(model_path, attn_sum, quant_path, modify=True, dims=quant_dims)
+    llama_chat = LLamaChat(model_path, attn_sum, quant_path, modify=modify, dims=quant_dims)
 
     choices_idx = get_choices_idx(choices,llama_chat.tokenizer)
 
