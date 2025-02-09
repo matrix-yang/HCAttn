@@ -198,7 +198,10 @@ if __name__ == "__main__":
     if quant_path is None:
         quant_path = '/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
     print(f'use quant {quant_path} quant dims {args.quant_dims}')
-    llama_chat = LLamaChat(model_path, attn_sum, quant_path,modify=True,dims=args.quant_dims)
+    if 'Llama' in model_name:
+        llama_chat = LLamaChat(model_path, attn_sum, quant_path,modify=True,dims=args.quant_dims)
+    else:
+        llama_chat = LLamaChat(model_path, attn_sum, quant_path, modify=True, dims=args.quant_dims)
     model = llama_chat.model
     tokenizer = llama_chat.tokenizer
     eos_token_ids = llama_chat.eos_token_ids

@@ -14,7 +14,7 @@ quant_path=$9
 # cut the last part of the path of the attn_pattern to get the name
 attn_pattern_name=$(echo $attn_pattern | rev | cut -d'/' -f1 | rev)
 
-suffix="${attn_pattern_name}-attn_sum=${attn_sum}_quant32K"
+suffix="${attn_pattern_name}-attn_sum_${attn_sum}"
 (
     python -u needle_in_haystack_ours.py --s_len $s_len \
         --e_len $pretrained_len \
@@ -36,5 +36,5 @@ suffix="${attn_pattern_name}-attn_sum=${attn_sum}_quant32K"
 
 python visualize.py \
     --folder_path "results/${model}_${suffix}/" \
-    --model_name "${model}_attn_${attn_sum}_quant32K" \
+    --model_name "${model}_attn_${attn_sum}" \
     --pretrained_len $pretrained_len

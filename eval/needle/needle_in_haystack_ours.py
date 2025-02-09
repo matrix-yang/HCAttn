@@ -26,6 +26,7 @@ from duo_attn.utils import (
 )
 
 from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
+from spare_attn.solution2.modeify_qwen import enable_qwen_approx_attention_eval
 from spare_attn.solution2.simulation_quant_k import Quanter
 
 class LLMNeedleHaystackTester:
@@ -58,11 +59,8 @@ class LLMNeedleHaystackTester:
         final_context_length_buffer=200,
         seconds_to_sleep_between_completions=None,
         print_ongoing_status=True,
-        attn_load_dir=None,
-        sparsity=0.5,
         simulation_length=50,
         attn_sum=0.5,
-        no_quant=True,
         quant_path=None,
         modify=True
     ):
@@ -193,23 +191,33 @@ class LLMNeedleHaystackTester:
             attn_implementation="eager",
         ).eval()
 
-        print(f"attn_load_dir: {attn_load_dir}")
-
 
         if modify:
             print(f'modify attn use {attn_sum}')
             self.radio_bag=[]
-            enable_llama_approx_attention_eval( self.model_to_test,attn_sum=attn_sum,radio_bag=self.radio_bag)
+            if 'Llama' in model_name:
+                enable_llama_approx_attention_eval(self.model_to_test,attn_sum=attn_sum,radio_bag=self.radio_bag)
+                # list all usable GPU devices using torch
+                device_list = [i for i in range(torch.cuda.device_count())]
+                self.model_to_test = to_device(self.model_to_test, device_list, enable_tp=True)
+            elif 'Qwen2' in model_name:
+                enable_qwen_approx_attention_eval(self.model_to_test,attn_sum=attn_sum,radio_bag=self.radio_bag)
+                device_list = [i for i in range(torch.cuda.device_count())]
+                import tensor_parallel as tp
+                self.model_to_test=tp.tensor_parallel(
+                            self.model_to_test,
+                            device_list,
+                            sharded=True,
+                        )
+            else:
+                raise f'model name is err'
+
         if quant_path:
             print(f'use quant {quant_path}')
             self.quanter = Quanter(quant_path)
             self.is_quant=True
         else:
             self.is_quant = False
-
-        # list all usable GPU devices using torch
-        device_list = [i for i in range(torch.cuda.device_count())]
-        self.model_to_test = to_device(self.model_to_test, device_list, enable_tp=True)
 
         self.model_to_test_description = model_name
 
@@ -560,8 +568,6 @@ if __name__ == "__main__":
         model_provider=args.model_provider,
         save_contexts=True,
         save_results=True,
-        attn_load_dir=args.attn_load_dir,
-        sparsity=args.sparsity,
         simulation_length=args.simulation_length,
         context_lengths_min=args.context_lengths_min,
         context_lengths_max=args.context_lengths_max,
