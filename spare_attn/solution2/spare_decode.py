@@ -14,10 +14,16 @@ def decode_token(query_states_ori, key_states_ori, value_states_ori, sum_value, 
     # print('----------------',query_states.device,query_states.shape,query_states.device,key_states.shape)
     q_heads = query_states.shape[0]
     k_heads = key_states.shape[0]
+    seq_len = key_states.shape[1]
+    dims= query_states.shape[2]
     if q_heads != k_heads:
-        # key_states=key_states.repeat(q_heads,1,1)
-        value_states = value_states.repeat(q_heads, 1, 1)
+        #print('--',query_states.shape,key_states.shape)
+        nrep=int(q_heads/k_heads)
+        key_states=key_states[:,None,:,:].expand(k_heads,nrep,seq_len,dims).reshape(q_heads, seq_len, dims)
+        #print('--',key_states.shape)
+        value_states = value_states[:,None,:,:].expand(k_heads,nrep,seq_len,dims).reshape(q_heads, seq_len, dims)
     attention_scores = torch.matmul(query_states, key_states.transpose(-1, -2)) * 0.088388
+
     #print('----------------', query_states.shape, key_states.shape, attention_scores.shape)
     # 32 1000
     attention_probs = torch.softmax(attention_scores, dim=-1, dtype=torch.float32).to(query_states.dtype)
