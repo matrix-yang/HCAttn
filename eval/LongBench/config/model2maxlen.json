@@ -4,5 +4,6 @@
     "Mistral-7B-Instruct-v0.3": 31500,
     "Llama-3-8B-Instruct-Gradient-1048k": 1047500,
     "Llama-2-7B-32K-Instruct": 31500,
-    "Meta-Llama-3.1-8B-Instruct": 127500
+    "Meta-Llama-3.1-8B-Instruct": 127500,
+    "Qwen2.5-7B-Instruct-1M": 102400
 }
