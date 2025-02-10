@@ -198,26 +198,30 @@ class LLMNeedleHaystackTester:
             if 'Llama' in model_name:
                 enable_llama_approx_attention_eval(self.model_to_test,attn_sum=attn_sum,radio_bag=self.radio_bag)
                 # list all usable GPU devices using torch
-                device_list = [i for i in range(torch.cuda.device_count())]
-                self.model_to_test = to_device(self.model_to_test, device_list, enable_tp=True)
+
             elif 'Qwen2' in model_name:
                 enable_qwen_approx_attention_eval(self.model_to_test,attn_sum=attn_sum,radio_bag=self.radio_bag)
-                device_list = [i for i in range(torch.cuda.device_count())]
-                import tensor_parallel as tp
-                self.model_to_test=tp.tensor_parallel(
-                            self.model_to_test,
-                            device_list,
-                            sharded=True,
-                        )
+                # device_list = [i for i in range(torch.cuda.device_count())]
+                # import tensor_parallel as tp
+                # print('load model use mem', int(torch.cuda.memory_allocated() / 1000000000), 'GB')
+                # # self.model_to_test=tp.tensor_parallel(
+                # #             self.model_to_test,
+                # #             device_list,
+                # #             sharded=True,
+                # #         )
+                # self.model_to_test = self.model_to_test.to('cuda:0')
+                # print('after tensor_parallel', int(torch.cuda.memory_allocated() / 1000000000), 'GB')
             else:
                 raise f'model name is err'
-
-        if quant_path:
-            print(f'use quant {quant_path}')
-            self.quanter = Quanter(quant_path)
-            self.is_quant=True
-        else:
-            self.is_quant = False
+        device_list = [i for i in range(torch.cuda.device_count())]
+        self.model_to_test = to_device(self.model_to_test, device_list, enable_tp=True)
+        print('after tensor_parallel', int(torch.cuda.memory_allocated() / 1000000000), 'GB')
+        # if quant_path:
+        #     print(f'use quant {quant_path}')
+        #     self.quanter = Quanter(quant_path)
+        #     self.is_quant=True
+        # else:
+        #     self.is_quant = False
 
         self.model_to_test_description = model_name
 
@@ -306,8 +310,8 @@ class LLMNeedleHaystackTester:
 
             pred_token_idx = output.logits[:, -1, :].argmax(dim=-1).unsqueeze(1)
             generated_content = [pred_token_idx.item()]
-            if self.is_quant:
-                pass
+            # if self.is_quant:
+            #     pass
                 #past_key_values=self.quanter.quant(past_key_values)
             for _ in range(50):
                 outputs = self.model_to_test(
@@ -322,13 +326,13 @@ class LLMNeedleHaystackTester:
                 if pred_token_idx.item() in self.eos_token_ids:
                     break
 
-            print('mem use after decoder', torch.cuda.memory_allocated())
+            print('mem use after decoder', int(torch.cuda.memory_allocated()/1000000000),'GB')
             del past_key_values
             del outputs
             del pred_token_idx
             del prompt_input_ids
             torch.cuda.empty_cache()
-            print('del past_key_values after infer', torch.cuda.memory_allocated())
+            print('del past_key_values after infer', int(torch.cuda.memory_allocated()/1000000000),'GB')
 
 
         response = self.enc.decode(generated_content, skip_special_tokens=True).strip()
