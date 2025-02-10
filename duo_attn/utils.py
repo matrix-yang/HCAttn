@@ -194,6 +194,65 @@ def get_mistral_config(
 
     return config
 
+def get_qwen_config(
+    model_config: PretrainedConfig, devices: Sequence[torch.device]
+) -> Config:
+    # assert (
+    #     model_config.model_type == "mistral"
+    # ), f"Trying to pass {model_config.model_type} as mistral config"
+
+    world_size = len(devices)
+    head_dim = model_config.hidden_size // model_config.num_attention_heads
+    num_kv = model_config.num_key_value_heads
+    q_per_kv = model_config.num_attention_heads // model_config.num_key_value_heads
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
+    )  # this operation ensures that we get attention cache for all heads on each device
+
+    config = Config(
+        state_rules={
+            # MistralAttention
+            r".*self_attn\.q_proj\.(weight|bias)$": SplitInChunks(
+                world_size=world_size, dim=0, chunk_size=q_per_kv * head_dim
+            ),
+            r".*self_attn\.k_proj\.(weight|bias)$": SplitInChunks(
+                world_size=world_size, dim=0, chunk_size=head_dim
+            ),
+            r".*self_attn\.v_proj\.(weight|bias)$": SplitInChunks(
+                world_size=world_size, dim=0, chunk_size=head_dim
+            ),
+            r".*self_attn\.o_proj\.weight$": SplitInChunks(
+                world_size=world_size, dim=1, chunk_size=q_per_kv * head_dim
+            ),
+            # MistralMLP
+            r".*mlp\.gate_proj\.weight$": Split(world_size=world_size, dim=0),
+            r".*mlp\.down_proj\.weight$": Split(world_size=world_size, dim=1),
+            r".*mlp\.up_proj\.weight$": Split(world_size=world_size, dim=0),
+            # MistralModel
+            r".*embed_tokens.weight$": Split(world_size=world_size, dim=1),
+            r".*lm_head\.weight$": Split(world_size=world_size, dim=0),
+        },
+        input_rules={
+            r".*self_attn$": {"past_key_value": select_kv_for_rank},
+        },
+        output_rules={
+            r".*self_attn$": {0: "sum", 2: gather_kv_across_ranks},
+            r".*mlp$": {0: "sum"},
+            r".*embed_tokens$": {0: "gather -1"},
+            r".*lm_head$": {0: "gather -1"},
+        },
+        attr_rules={
+            r".*self_attn$": {
+                "hidden_size": partial(
+                    split_inner_dim, num_heads=num_kv, world_size=world_size
+                ),
+                "num_heads": lambda n, rank: q_per_kv
+                * split_num_heads(n // q_per_kv, rank=rank, world_size=world_size),
+            }
+        },
+    )
+    return config
+
 
 def to_device(
     model,
@@ -214,6 +273,8 @@ def to_device(
         if tensor_parallel_config is None:
             if model.config.model_type == "mistral":
                 tensor_parallel_config = get_mistral_config(model.config, device_ids)
+            elif model.config.model_type == "qwen2":
+                tensor_parallel_config = get_qwen_config(model.config, device_ids)
             else:
                 tensor_parallel_config = get_default_config(model, device_ids)
         tensor_parallel_config.state_rules[re.compile(r".*full_attention_heads$")] = (
