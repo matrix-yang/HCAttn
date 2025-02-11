@@ -53,12 +53,9 @@ def load_model_and_tokenizer(path):
     model = model.eval()
     return model, tokenizer, eos_token_ids
 
-from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
 from spare_attn.solution2.simulation_quant_k import Quanter
-from spare_attn.solution2.modeify_qwen import enable_qwen_approx_attention_eval
-
 class LLamaChat:
-    def __init__(self,model_path,attn_sum,quant_path,modify=True,dims=4):
+    def __init__(self,model_path,attn_sum,quant_path,modify,dims=4):
         seed_everything(42)
         device_list = [0]
         #model_path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7b-chat-hf'
@@ -66,15 +63,28 @@ class LLamaChat:
         self.model_path=model_path
         self.radio_bag=[]
         model, tokenizer, eos_token_ids = load_model_and_tokenizer(model_path)
-        if modify:
+        if modify=="ours":
+            from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
             enable_llama_approx_attention_eval(model,attn_sum=attn_sum,radio_bag=self.radio_bag)
+        elif modify=="sllm":
+            from spare_attn.solution2.sllm_modeify_llama import enable_llama_approx_attention_eval
+            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+        elif modify=="h2o":
+            from spare_attn.solution2.h2o_modeify_llama import enable_llama_approx_attention_eval
+            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+        else:
+            print("-"*50)
+            print("this test dont modify attn fwd")
+
         self.model = to_device(model, device_list, enable_tp=True)
         self.tokenizer = tokenizer
         self.eos_token_ids = eos_token_ids
+
         if quant_path:
             self.quanter = Quanter(quant_path,dims)
             self.is_quant=True
         else:
+            self.quanter = None
             self.is_quant = False
 
     def chat(self, prompt, max_gen=2, decoding_simulation_length=1):
@@ -167,6 +177,7 @@ class QwenChat(LLamaChat):
         self.radio_bag=[]
         model, tokenizer, eos_token_ids = load_model_and_tokenizer(model_path)
         if modify:
+            from spare_attn.solution2.modeify_qwen import enable_qwen_approx_attention_eval
             enable_qwen_approx_attention_eval(model,attn_sum=attn_sum,radio_bag=self.radio_bag)
         self.model = to_device(model, device_list, enable_tp=True)
         self.tokenizer = tokenizer

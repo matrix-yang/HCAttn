@@ -33,8 +33,9 @@ def parse_args(args=None):
     parser.add_argument("--decoding_simulation_length", type=int, default=0)
     parser.add_argument("--attn_sum", type=float, default=0.5)
     parser.add_argument("--no_quant", action="store_true")
-    parser.add_argument("--quant_path", type=str, default="none")
+    parser.add_argument("--quant_path", type=str, default="")
     parser.add_argument("--quant_dims", type=int, default=4)
+    parser.add_argument("--modify", type=str, default="ours")
     return parser.parse_args(args)
 
 
@@ -195,13 +196,16 @@ if __name__ == "__main__":
     model_path = model2path[model_name]
     attn_sum = args.attn_sum
     quant_path = args.quant_path
-    if quant_path is None:
-        quant_path = '/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
-    print(f'use quant {quant_path} quant dims {args.quant_dims}')
-    if 'Llama' in model_name:
-        llama_chat = LLamaChat(model_path, attn_sum, quant_path,modify=True,dims=args.quant_dims)
+    modify = args.modify
+    if quant_path =="none":
+        quant_path = None
+        print(f'this test dont ues quant')
     else:
-        llama_chat = LLamaChat(model_path, attn_sum, quant_path, modify=True, dims=args.quant_dims)
+        print(f'use quant {quant_path} quant dims {args.quant_dims}')
+    if 'Llama' in model_name:
+        llama_chat = LLamaChat(model_path, attn_sum, quant_path,modify=modify,dims=args.quant_dims)
+    else:
+        llama_chat = LLamaChat(model_path, attn_sum, quant_path, modify=modify, dims=args.quant_dims)
     model = llama_chat.model
     tokenizer = llama_chat.tokenizer
     eos_token_ids = llama_chat.eos_token_ids
@@ -245,9 +249,9 @@ if __name__ == "__main__":
             os.makedirs(f"eval/LongBench/pred/{model_name}")
         if not args.no_quant:
             quant_name=quant_path.split('/')[-1][:-4]
-            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}_{quant_name}.jsonl"
+            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}_{quant_name}_{modify}.jsonl"
         else:
-            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}-no_quant.jsonl"
+            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}_no_quant_{modify}.jsonl"
 
         if os.path.exists(out_path):
             print(f'{out_path} is exists pass dataset {dataset}')
