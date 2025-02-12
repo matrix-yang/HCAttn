@@ -8,7 +8,7 @@ from torch import nn
 
 from transformers.cache_utils import Cache
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, apply_rotary_pos_emb, repeat_kv
-
+from flash_attn import flash_attn_func, flash_attn_with_kvcache
 
 def tova_llama_attention_forward(
         self,
@@ -81,16 +81,28 @@ def tova_llama_attention_forward(
 
     # upcast attention to fp32
     attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-    attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
-    attn_output = torch.matmul(attn_weights, value_states)
 
-    if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
-        raise ValueError(
-            f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
-            f" {attn_output.size()}"
-        )
+    ## old forward
+    # attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+    # attn_output = torch.matmul(attn_weights, value_states)
+    #
+    # if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
+    #     raise ValueError(
+    #         f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
+    #         f" {attn_output.size()}"
+    #     )
+    #
+    # attn_output = attn_output.transpose(1, 2).contiguous()
 
-    attn_output = attn_output.transpose(1, 2).contiguous()
+    # fast attn
+    attn_output = flash_attn_func(
+        query_states.transpose(1, 2),
+        key_states.transpose(1, 2),
+        value_states.transpose(1, 2),
+        causal=True,
+        dropout_p=0.0,
+    )
+
 
     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
 
@@ -98,6 +110,8 @@ def tova_llama_attention_forward(
 
     if past_key_value is not None and hasattr(past_key_value, 'reduce'): # Added to the original imp
         past_key_value.reduce(self.layer_idx, attn_weights)
+
+    del attn_weights
 
     if not output_attentions:
         attn_weights = None
