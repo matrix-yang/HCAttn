@@ -62,7 +62,10 @@ class LLamaChat:
         # llama_model2path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7B-32K-Instruct'
         self.model_path=model_path
         self.radio_bag=[]
+        self.modify=modify
         model, tokenizer, eos_token_ids = load_model_and_tokenizer(model_path)
+        #TOVA需要
+        self.init_past_key_values=None
         if modify=="ours":
             from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
             enable_llama_approx_attention_eval(model,attn_sum=attn_sum,radio_bag=self.radio_bag)
@@ -72,6 +75,11 @@ class LLamaChat:
         elif modify=="h2o":
             from spare_attn.solution2.h2o_modeify_llama import enable_llama_approx_attention_eval
             enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+        elif modify=="tova":
+            from spare_attn.solution2.TOVA import TOVACache, enable_tova_caching
+            enable_tova_caching(model)
+            # cache_size meaning min size
+            self.init_past_key_values =TOVACache(cache_size=128,radio=0.5)
         else:
             print("-"*50)
             print("this test dont modify attn fwd")
@@ -91,10 +99,12 @@ class LLamaChat:
         #prompt = build_chat(prompt)
         input = self.tokenizer(prompt, truncation=False, return_tensors="pt").to("cuda")
         simulation_start_idx = input.input_ids.shape[-1] - decoding_simulation_length
+
+
         with torch.no_grad():
             output = self.model(
                 input_ids=input.input_ids[:, :simulation_start_idx],
-                past_key_values=None,
+                past_key_values=self.init_past_key_values,
                 use_cache=True,
             )
             past_key_values = output.past_key_values
