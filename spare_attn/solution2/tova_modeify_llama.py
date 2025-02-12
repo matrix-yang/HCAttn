@@ -121,24 +121,11 @@ def llama_approx_attention_forward(
     attn_output = self.o_proj(attn_output)
 
     # 选cache
+
     past_key_value = [key_states, value_states] if use_cache else None
-    key_states = repeat_kv(key_states, self.num_key_value_groups)
-    attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
-    if q_len == kv_seq_len:
-        attention_mask = torch.full((kv_seq_len, kv_seq_len), fill_value=torch.finfo(query_states.dtype).min,
-                                    dtype=query_states.dtype, device=query_states.device)
-        attention_mask = torch.triu(attention_mask, diagonal=1)
 
-        attention_mask = attention_mask[None, None, :, :].expand(bsz, 1, -1, -1)
-        if attention_mask.size() != (bsz, 1, q_len, kv_seq_len):
-            raise ValueError(
-                f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.size()}"
-            )
-        attn_weights = attn_weights + attention_mask
-
-    # upcast attention to fp32
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-
+    attn_weights = cal_attn_weight(query_states, key_states, self.num_key_value_groups)
+    # attn_weights = attn_weights_bag
     if q_len == kv_seq_len:
         cache_size = int(key_states.shape[-2] * 0.5)
         past_key_value = reduce_kv(past_key_value, attn_weights, cache_size)
@@ -156,10 +143,10 @@ def llama_approx_attention_forward(
 def reduce_kv(past_key_value, attn_weights, cache_size):
     bsz, _, _, num_keys = attn_weights.size()
     _, num_kv_heads, _, _ = past_key_value[0].size()
-    print('k--', past_key_value[0].size())
+    # print('k--', past_key_value[0].size())
     # Utilize the average attention weights to select the top-k keys and values
     mean_attn_weights = torch.mean(attn_weights[:, :, -1, :], dim=1).clone().detach()
-    print('mean_attn_weights--', mean_attn_weights.size(),cache_size)
+    # print('mean_attn_weights--', mean_attn_weights.size(),cache_size)
     vals, ind = torch.topk(mean_attn_weights, k=cache_size, dim=-1)
     ind = torch.sort(ind).values  # stabelizes some things for some reason
     expand_ind = ind.unsqueeze(1).unsqueeze(-1).expand(bsz, num_kv_heads, ind.size(-1),
@@ -168,4 +155,83 @@ def reduce_kv(past_key_value, attn_weights, cache_size):
     # Reduce the size of the cache to self.cache_size
     past_key_value[0] = torch.gather(past_key_value[0], dim=2, index=expand_ind)
     past_key_value[1] = torch.gather(past_key_value[1], dim=2, index=expand_ind)
-    return past_key_value
+
+    return new_past_key_value
+
+
+def reduce_kv_with_sink(past_key_value_ori, attn_weights, cache_size):
+    bsz, _, _, num_keys = attn_weights.size()
+    sink_size = 4
+    sink_k = past_key_value_ori[0][:, :, :sink_size, :]
+    sink_v = past_key_value_ori[1][:, :, :sink_size, :]
+    past_key_value = [past_key_value_ori[0][:, :, sink_size:, :], past_key_value_ori[1][:, :, sink_size:, :]]
+    _, num_kv_heads, _, _ = past_key_value[0].size()
+    # print('k--', past_key_value[0].size())
+    # Utilize the average attention weights to select the top-k keys and values
+    mean_attn_weights = torch.mean(attn_weights[:, :, -1, :], dim=1).clone().detach()
+    # print('mean_attn_weights--', mean_attn_weights.size(),cache_size)
+    vals, ind = torch.topk(mean_attn_weights, k=cache_size - sink_size, dim=-1)
+    ind = torch.sort(ind).values  # stabelizes some things for some reason
+    expand_ind = ind.unsqueeze(1).unsqueeze(-1).expand(bsz, num_kv_heads, ind.size(-1),
+                                                       past_key_value[0].size(-1))
+
+    # Reduce the size of the cache to self.cache_size
+    past_key_value[0] = torch.gather(past_key_value[0], dim=2, index=expand_ind)
+    past_key_value[1] = torch.gather(past_key_value[1], dim=2, index=expand_ind)
+    new_past_key_value = [
+        torch.cat([sink_k, past_key_value[0]], dim=2),
+        torch.cat([sink_v, past_key_value[1]], dim=2)
+    ]
+
+    return new_past_key_value
+
+
+# def low_cal_attn(query_states, key_states, num_key_value_groups):
+#     key_states = repeat_kv(key_states, num_key_value_groups)
+#     # query_states = torch.rand(1, 32, 45, 128)
+#     # key_states = torch.rand(1, 32, 45, 128)
+#     bsz = query_states.shape[0]
+#     head = query_states.shape[1]
+#     q_len = query_states.shape[-2]
+#     kv_seq_len = key_states.shape[-2]
+#     attn = torch.zeros((bsz, head, q_len, kv_seq_len), dtype=key_states.dtype, device=key_states.device)
+#     for i in range(0, head, 4):
+#         s = i * 4
+#         e = s + 4
+#         q = query_states[:, s:e, :, :]
+#         k = key_states[:, s:e, :, :]
+#         attn[:, s:e, :, :] = cal_attn_weight(q, k)
+#     return attn
+
+
+def cal_attn_weight(query_states, key_states, num_key_value_groups):
+    key_states = repeat_kv(key_states, num_key_value_groups)
+    bsz = query_states.shape[0]
+    q_len = 1
+    query_states = query_states[:, :, -1, :]
+    # kv_seq_len = key_states.shape[-2]
+
+    attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(128)
+    #
+    # if q_len == kv_seq_len:
+    #     attention_mask = torch.full((kv_seq_len, kv_seq_len), fill_value=torch.finfo(key_states.dtype).min,
+    #                                 dtype=key_states.dtype, device=key_states.device)
+    #     attention_mask = torch.triu(attention_mask, diagonal=1)
+    #
+    #     attention_mask = attention_mask[None, None, :, :].expand(bsz, 1, -1, -1)
+    #     if attention_mask.size() != (bsz, 1, q_len, kv_seq_len):
+    #         raise ValueError(
+    #             f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.size()}"
+    #         )
+    #     attn_weights = attn_weights + attention_mask
+    #     del attention_mask
+    # upcast attention to fp32
+    # attn_weights_bag = torch.zeros_like(attn_weights)
+    # step = 1000
+    # for i in range(0, attn_weights.shape[-2], step):
+    #     s = i * step
+    #     e = min(attn_weights.shape[-2], s + step)
+    #     taw = attn_weights[:, :, s:e,: ]
+    #     attn_weights_bag[:, :, s:e, :] = nn.functional.softmax(taw, dim=-1, dtype=torch.bfloat16).to(key_states.dtype)
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(key_states.dtype)
+    return attn_weights
