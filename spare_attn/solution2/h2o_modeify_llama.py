@@ -56,6 +56,31 @@ def warp_forward(attn_sum, radio_bag):
 
     return new_func
 
+def gen_h2o_mask(attn_weights,heavy_budget_ratio=0.5,recent_budget_ratio=0.5):
+
+
+    ### Heavy + Recent
+    heavy_budget = int(heavy_budget_ratio * attn_weights.shape[-1])
+    recent_budget = int(recent_budget_ratio * attn_weights.shape[-1])
+
+    # Heavy Hitter Mask (Based on global statistics)
+    tmp_attn = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(attn_weights.dtype)
+    tmp_sum = torch.sum(tmp_attn, dim=-2)
+    _, tmp_topk = tmp_sum.topk(k=heavy_budget, dim=-1)
+
+    zeros = torch.zeros_like(tmp_sum, dtype=torch.bool)
+    mask_bottom = zeros.scatter(-1, tmp_topk, True).unsqueeze(2)
+    mask_bottom = mask_bottom.expand(mask_bottom.shape[0], mask_bottom.shape[1], attn_weights.shape[-2],
+                                     mask_bottom.shape[-1])
+
+    ones = torch.ones_like(attn_weights, dtype=torch.bool)
+    ones = torch.tril(ones, diagonal=recent_budget)
+    ones = torch.triu(ones, diagonal=-recent_budget)
+    mask_bottom = torch.logical_or(mask_bottom, ones)
+    # mask_bottom = ones
+    h2omask = torch.zeros_like(attn_weights, dtype=torch.bool)
+    h2omask[~mask_bottom] = torch.finfo(attn_weights.dtype).min
+    return h2omask
 
 def llama_approx_attention_forward(
         self,
@@ -124,21 +149,6 @@ def llama_approx_attention_forward(
     heavy_budget = int(heavy_budget_ratio * attn_weights.shape[-1])
     recent_budget = int(recent_budget_ratio * attn_weights.shape[-1])
 
-    # # Heavy Hitter Mask (Based on local statistics)
-    # if heavy_budget > 0:
-    #     mask_bottom = local_heavy_hitter_mask(attn_weights, heavy_budget) # Default: No padding applied to input
-    # else:
-    #     mask_bottom = torch.zeros_like(attn_weights, dtype=torch.bool)
-
-    # ones = torch.ones_like(attn_weights, dtype=torch.bool)
-    # ones = torch.triu(ones, diagonal=-recent_budget)
-    # mask_bottom = torch.logical_or(mask_bottom, ones)
-
-    # mask_bottom = torch.tril(mask_bottom, diagonal=0)
-
-    # # mask_bottom = ones
-    # attn_weights[~mask_bottom] = torch.min(attention_mask)
-
     # Heavy Hitter Mask (Based on global statistics)
     tmp_attn = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(attn_weights.dtype)
     tmp_sum = torch.sum(tmp_attn, dim=-2)
@@ -158,12 +168,14 @@ def llama_approx_attention_forward(
 
     # upcast attention to fp32
     attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+
     attn_output = torch.matmul(attn_weights, value_states)
     if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
         raise ValueError(
             f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
             f" {attn_output.size()}"
         )
+
 
     attn_output = attn_output.transpose(1, 2)
     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
