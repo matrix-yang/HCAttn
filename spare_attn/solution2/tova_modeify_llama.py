@@ -156,7 +156,7 @@ def reduce_kv(past_key_value, attn_weights, cache_size):
     past_key_value[0] = torch.gather(past_key_value[0], dim=2, index=expand_ind)
     past_key_value[1] = torch.gather(past_key_value[1], dim=2, index=expand_ind)
 
-    return new_past_key_value
+    return past_key_value
 
 
 def reduce_kv_with_sink(past_key_value_ori, attn_weights, cache_size):
@@ -170,7 +170,7 @@ def reduce_kv_with_sink(past_key_value_ori, attn_weights, cache_size):
     # Utilize the average attention weights to select the top-k keys and values
     mean_attn_weights = torch.mean(attn_weights[:, :, -1, :], dim=1).clone().detach()
     # print('mean_attn_weights--', mean_attn_weights.size(),cache_size)
-    vals, ind = torch.topk(mean_attn_weights, k=cache_size - sink_size, dim=-1)
+    vals, ind = torch.topk(mean_attn_weights[:,sink_size:], k=cache_size - sink_size, dim=-1)
     ind = torch.sort(ind).values  # stabelizes some things for some reason
     expand_ind = ind.unsqueeze(1).unsqueeze(-1).expand(bsz, num_kv_heads, ind.size(-1),
                                                        past_key_value[0].size(-1))
