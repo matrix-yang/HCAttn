@@ -111,7 +111,7 @@ def llama_approx_attention_forward(
 
         attention_mask = torch.full((kv_seq_len, kv_seq_len), fill_value=torch.finfo(query_states.dtype).min,
                                     dtype=query_states.dtype, device=query_states.device)
-        if recent > kv_seq_len:
+        if recent < kv_seq_len:
             attention_mask = torch.triu(attention_mask, diagonal=1) + torch.tril(attention_mask, diagonal=-recent)
             attention_mask[sink:, :sink] = 0
         else:
