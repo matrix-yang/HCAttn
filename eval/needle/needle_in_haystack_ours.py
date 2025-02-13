@@ -193,23 +193,23 @@ class LLMNeedleHaystackTester:
         self.radio_bag = []
         if modify == "ours":
             from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
-            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+            enable_llama_approx_attention_eval(self.model_to_test, attn_sum=attn_sum, radio_bag=self.radio_bag)
         elif modify == "sllm":
             from spare_attn.solution2.sllm_modeify_llama import enable_llama_approx_attention_eval
-            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+            enable_llama_approx_attention_eval(self.model_to_test, attn_sum=attn_sum, radio_bag=self.radio_bag)
         elif modify == "h2o":
             from spare_attn.solution2.h2o_modeify_llama import enable_llama_approx_attention_eval
-            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+            enable_llama_approx_attention_eval(self.model_to_test, attn_sum=attn_sum, radio_bag=self.radio_bag)
         elif modify == "tova":
             # from spare_attn.solution2.TOVA import TOVACache, enable_tova_caching
             # enable_tova_caching(model)
             # # cache_size meaning min size
             # self.init_past_key_values =TOVACache(cache_size=128,radio=0.5)
             from spare_attn.solution2.tova_modeify_llama import enable_llama_approx_attention_eval
-            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+            enable_llama_approx_attention_eval(self.model_to_test, attn_sum=attn_sum, radio_bag=self.radio_bag)
         else:
             print("-" * 50)
-            print("this test dont modify attn fwd")
+            print(f"this test dont modify attn fwd {modify}")
             # print(f'modify attn use {attn_sum}')
             # self.radio_bag=[]
             #

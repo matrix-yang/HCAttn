@@ -10,7 +10,7 @@ pretrained_len=$6
 model_provider=$7
 attn_sum=$8
 quant_path=$9
-modify=$10
+modify=${10}
 # cut the last part of the path of the attn_pattern to get the name
 attn_pattern_name=$(echo $attn_pattern | rev | cut -d'/' -f1 | rev)
 
