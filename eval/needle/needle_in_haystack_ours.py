@@ -216,12 +216,12 @@ class LLMNeedleHaystackTester:
         device_list = [i for i in range(torch.cuda.device_count())]
         self.model_to_test = to_device(self.model_to_test, device_list, enable_tp=True)
         print('after tensor_parallel', int(torch.cuda.memory_allocated() / 1000000000), 'GB')
-        # if quant_path:
-        #     print(f'use quant {quant_path}')
-        #     self.quanter = Quanter(quant_path)
-        #     self.is_quant=True
-        # else:
-        #     self.is_quant = False
+        if quant_path!='none':
+            self.quanter = Quanter(quant_path,dims=0)
+            self.is_quant=True
+        else:
+            print('dont ues quant')
+            self.is_quant = False
 
         self.model_to_test_description = model_name
 
@@ -310,9 +310,9 @@ class LLMNeedleHaystackTester:
 
             pred_token_idx = output.logits[:, -1, :].argmax(dim=-1).unsqueeze(1)
             generated_content = [pred_token_idx.item()]
-            # if self.is_quant:
-            #     pass
-                #past_key_values=self.quanter.quant(past_key_values)
+            if self.is_quant:
+                #pass
+                past_key_values=self.quanter.quant(past_key_values)
             for _ in range(50):
                 outputs = self.model_to_test(
                     input_ids=pred_token_idx,
