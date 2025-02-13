@@ -10,7 +10,7 @@ pretrained_len=$6
 model_provider=$7
 attn_sum=$8
 quant_path=$9
-
+modify=$10
 # cut the last part of the path of the attn_pattern to get the name
 attn_pattern_name=$(echo $attn_pattern | rev | cut -d'/' -f1 | rev)
 
@@ -30,7 +30,7 @@ suffix="${attn_pattern_name}-attn_sum_${attn_sum}"
         --model_path /ms/FM/ydq/kvcache/${model} \
         --quant_path $quant_path \
         --attn_sum $attn_sum \
-        --modify
+        --modify $modify
 
 ) 2>&1 | tee logs/eval_${model}_${suffix}.log
 

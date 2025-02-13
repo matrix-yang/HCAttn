@@ -25,8 +25,7 @@ from duo_attn.utils import (
     sparsify_attention_heads,
 )
 
-from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
-from spare_attn.solution2.modeify_qwen import enable_qwen_approx_attention_eval
+
 from spare_attn.solution2.simulation_quant_k import Quanter
 
 class LLMNeedleHaystackTester:
@@ -62,7 +61,7 @@ class LLMNeedleHaystackTester:
         simulation_length=50,
         attn_sum=0.5,
         quant_path=None,
-        modify=True
+        modify='none'
     ):
         """
         :param needle: The needle to be found in the haystack. Default is None.
@@ -191,28 +190,49 @@ class LLMNeedleHaystackTester:
             attn_implementation="eager",
         ).eval()
 
-
-        if modify:
-            print(f'modify attn use {attn_sum}')
-            self.radio_bag=[]
-            if 'Llama' in model_name:
-                enable_llama_approx_attention_eval(self.model_to_test,attn_sum=attn_sum,radio_bag=self.radio_bag)
-                # list all usable GPU devices using torch
-
-            elif 'Qwen2' in model_name:
-                enable_qwen_approx_attention_eval(self.model_to_test,attn_sum=attn_sum,radio_bag=self.radio_bag)
-                # device_list = [i for i in range(torch.cuda.device_count())]
-                # import tensor_parallel as tp
-                # print('load model use mem', int(torch.cuda.memory_allocated() / 1000000000), 'GB')
-                # # self.model_to_test=tp.tensor_parallel(
-                # #             self.model_to_test,
-                # #             device_list,
-                # #             sharded=True,
-                # #         )
-                # self.model_to_test = self.model_to_test.to('cuda:0')
-                # print('after tensor_parallel', int(torch.cuda.memory_allocated() / 1000000000), 'GB')
-            else:
-                raise f'model name is err'
+        self.radio_bag = []
+        if modify == "ours":
+            from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
+            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+        elif modify == "sllm":
+            from spare_attn.solution2.sllm_modeify_llama import enable_llama_approx_attention_eval
+            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+        elif modify == "h2o":
+            from spare_attn.solution2.h2o_modeify_llama import enable_llama_approx_attention_eval
+            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+        elif modify == "tova":
+            # from spare_attn.solution2.TOVA import TOVACache, enable_tova_caching
+            # enable_tova_caching(model)
+            # # cache_size meaning min size
+            # self.init_past_key_values =TOVACache(cache_size=128,radio=0.5)
+            from spare_attn.solution2.tova_modeify_llama import enable_llama_approx_attention_eval
+            enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+        else:
+            print("-" * 50)
+            print("this test dont modify attn fwd")
+            # print(f'modify attn use {attn_sum}')
+            # self.radio_bag=[]
+            #
+            # from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
+            # from spare_attn.solution2.modeify_qwen import enable_qwen_approx_attention_eval
+            # if 'Llama' in model_name:
+            #     enable_llama_approx_attention_eval(self.model_to_test,attn_sum=attn_sum,radio_bag=self.radio_bag)
+            #     # list all usable GPU devices using torch
+            #
+            # elif 'Qwen2' in model_name:
+            #     enable_qwen_approx_attention_eval(self.model_to_test,attn_sum=attn_sum,radio_bag=self.radio_bag)
+            #     # device_list = [i for i in range(torch.cuda.device_count())]
+            #     # import tensor_parallel as tp
+            #     # print('load model use mem', int(torch.cuda.memory_allocated() / 1000000000), 'GB')
+            #     # # self.model_to_test=tp.tensor_parallel(
+            #     # #             self.model_to_test,
+            #     # #             device_list,
+            #     # #             sharded=True,
+            #     # #         )
+            #     # self.model_to_test = self.model_to_test.to('cuda:0')
+            #     # print('after tensor_parallel', int(torch.cuda.memory_allocated() / 1000000000), 'GB')
+            # else:
+            #     raise f'model name is err'
         device_list = [i for i in range(torch.cuda.device_count())]
         self.model_to_test = to_device(self.model_to_test, device_list, enable_tp=True)
         print('after tensor_parallel', int(torch.cuda.memory_allocated() / 1000000000), 'GB')
@@ -555,7 +575,8 @@ if __name__ == "__main__":
     parser.add_argument("--attn_sum", type=float, default=0.5)
     parser.add_argument("--no_quant", action="store_true")
     parser.add_argument("--quant_path", type=str, default="none")
-    parser.add_argument("--modify", action="store_true")
+    parser.add_argument("--modify", type=str, default="none")
+
     args = parser.parse_args()
 
     if args.model_path is not None:
