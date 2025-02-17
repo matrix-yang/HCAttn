@@ -44,6 +44,8 @@ def rebuid_no_norm_k(key_tensor, gpu_index, vectors):
 def batch_rebuid_no_norm_k(key_tensor, gpu_index, vectors, bits):
     k = key_tensor.cpu().to(torch.float).numpy()
     k_size = k.shape
+    # print(k.dtype)
+    # print(vectors.shape)
     # k_norms=np.linalg.norm(k, ord=2, axis=-1,keepdims=True)
     # normlize_k=k/k_norms
     low_k = k.reshape(-1, bits)
@@ -88,6 +90,52 @@ class Quanter():
         # print('----------end_quant')
         return new_past_key_values
 
+
+class KVQuanter():
+    def __init__(self, p, dims=0):
+        # p = '/nfs/hw-data/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
+        vectors = np.load(p)
+        if dims == 0:
+            self.dims = vectors.shape[-1]
+        print(f'use quant {p} dims {self.dims}')
+        self.k_gpu_index, self.k_vectors = load_index(vectors[0], self.dims)
+        self.v_gpu_index, self.v_vectors = load_index(vectors[1], self.dims)
+
+    def quant(self, past_key_values):
+        # print('----------do_quant')
+        fs_past_key_values = []
+        #past_key_values
+        # layers [full,sllm] [k,v] head len 128
+        for j in range(2):
+            # print('layers',len(past_key_values))
+            # print('f ,s ', len(past_key_values[0]))
+            # print('full',past_key_values[0][0].shape)
+            # print('slmm', past_key_values[0][1].shape)
+            splits=[past_key_values[i][j][0].shape[0] for i in range(32)]
+            dtype=past_key_values[0][j][0].dtype
+            k = torch.cat([past_key_values[i][j][0] for i in range(32)])
+            v = torch.cat([past_key_values[i][j][1] for i in range(32)])
+            # rbk = rebuid_no_norm_k(k, self.gpu_index, self.vectors)
+            rbk = batch_rebuid_no_norm_k(k, self.k_gpu_index, self.k_vectors, self.dims)
+            del k
+            torch.cuda.empty_cache()
+            selected_k = torch.from_numpy(rbk).to(dtype).cuda().split(splits,dim=0)
+
+            rbv = batch_rebuid_no_norm_k(v, self.v_gpu_index, self.v_vectors, self.dims)
+            del v
+            torch.cuda.empty_cache()
+            selected_v = torch.from_numpy(rbv).to(dtype).cuda().split(splits,dim=0)
+            # unsqueeze bsz
+            new_past_key_values = [torch.stack([selected_k[i], selected_v[i]]) for i in range(32)]
+            fs_past_key_values.append(new_past_key_values)
+
+        pkv=[]
+        for i in range(32):
+            pkv.append([fs_past_key_values[0][i],fs_past_key_values[1][i]])
+
+        # print(f'K shape {k.shape} cal sim {b - a} cal cmp {c - b} replace{d - c} all {d - a}')
+        # print('----------end_quant')
+        return pkv
 
 class NormQuanter():
     def __init__(self):

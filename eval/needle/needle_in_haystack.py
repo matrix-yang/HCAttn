@@ -32,33 +32,34 @@ class LLMNeedleHaystackTester:
     """
 
     def __init__(
-        self,
-        args,
-        needle="\n\nRemember, the best thing to do in San Francisco is eat a sandwich and sit in Dolores Park on a sunny day.\n\n",
-        haystack_dir="PaulGrahamEssays",
-        retrieval_question="what is the best thing to do in San Francisco?\n\nAnswer: The best thing to do in San Francisco is",
-        results_version=1,
-        context_lengths_min=1000,
-        context_lengths_max=1048000,
-        context_lengths_num_intervals=40,
-        context_lengths=None,
-        document_depth_percent_min=0,
-        document_depth_percent_max=100,
-        document_depth_percent_intervals=10,
-        document_depth_percents=None,
-        document_depth_percent_interval_type="linear",
-        model_provider="LLaMa",
-        model_name="",
-        model_name_suffix=None,
-        num_concurrent_requests=1,
-        save_results=True,
-        save_contexts=True,
-        final_context_length_buffer=200,
-        seconds_to_sleep_between_completions=None,
-        print_ongoing_status=True,
-        attn_load_dir=None,
-        sparsity=0.5,
-        simulation_length=50,
+            self,
+            args,
+            needle="\n\nRemember, the best thing to do in San Francisco is eat a sandwich and sit in Dolores Park on a sunny day.\n\n",
+            haystack_dir="PaulGrahamEssays",
+            retrieval_question="what is the best thing to do in San Francisco?\n\nAnswer: The best thing to do in San Francisco is",
+            results_version=1,
+            context_lengths_min=1000,
+            context_lengths_max=1048000,
+            context_lengths_num_intervals=40,
+            context_lengths=None,
+            document_depth_percent_min=0,
+            document_depth_percent_max=100,
+            document_depth_percent_intervals=10,
+            document_depth_percents=None,
+            document_depth_percent_interval_type="linear",
+            model_provider="LLaMa",
+            model_name="",
+            model_name_suffix=None,
+            num_concurrent_requests=1,
+            save_results=True,
+            save_contexts=True,
+            final_context_length_buffer=200,
+            seconds_to_sleep_between_completions=None,
+            print_ongoing_status=True,
+            attn_load_dir=None,
+            sparsity=0.5,
+            simulation_length=50,
+            quant_path='none'
     ):
         """
         :param needle: The needle to be found in the haystack. Default is None.
@@ -110,9 +111,9 @@ class LLMNeedleHaystackTester:
 
         if context_lengths is None:
             if (
-                context_lengths_min is None
-                or context_lengths_max is None
-                or context_lengths_num_intervals is None
+                    context_lengths_min is None
+                    or context_lengths_max is None
+                    or context_lengths_num_intervals is None
             ):
                 raise ValueError(
                     "Either context_lengths_min, context_lengths_max, context_lengths_intervals need to be filled out OR the context_lengths_list needs to be supplied."
@@ -131,9 +132,9 @@ class LLMNeedleHaystackTester:
 
         if document_depth_percents is None:
             if (
-                document_depth_percent_min is None
-                or document_depth_percent_max is None
-                or document_depth_percent_intervals is None
+                    document_depth_percent_min is None
+                    or document_depth_percent_max is None
+                    or document_depth_percent_intervals is None
             ):
                 raise ValueError(
                     "Either document_depth_percent_min, document_depth_percent_max, document_depth_percent_intervals need to be filled out OR the document_depth_percents needs to be supplied."
@@ -220,6 +221,14 @@ class LLMNeedleHaystackTester:
         self.simulation_length = simulation_length
         model_name = model_name.split("/")[-1]
 
+        if quant_path != 'none':
+            from spare_attn.solution2.simulation_quant_k import KVQuanter
+            self.quanter = KVQuanter(quant_path, dims=0)
+            self.is_quant = True
+        else:
+            print('dont ues quant')
+            self.is_quant = False
+
     def logistic(self, x, L=100, x0=50, k=0.1):
         if x == 0:
             return 0
@@ -275,9 +284,9 @@ class LLMNeedleHaystackTester:
             if self.args.prefilling_chunk_size is not None:
                 past_key_values = None
                 for i in range(
-                    0, prompt_input_ids.size(1), self.args.prefilling_chunk_size
+                        0, prompt_input_ids.size(1), self.args.prefilling_chunk_size
                 ):
-                    chunk = prompt_input_ids[:, i : i + self.args.prefilling_chunk_size]
+                    chunk = prompt_input_ids[:, i: i + self.args.prefilling_chunk_size]
                     output = self.model_to_test(
                         input_ids=chunk,
                         past_key_values=past_key_values,
@@ -297,6 +306,10 @@ class LLMNeedleHaystackTester:
                     use_cache=True,
                 )
                 past_key_values = output.past_key_values
+
+            if self.is_quant:
+                # pass
+                past_key_values = self.quanter.quant(past_key_values)
 
             pred_token_idx = output.logits[:, -1, :].argmax(dim=-1).unsqueeze(1)
             generated_content = [pred_token_idx.item()]
@@ -344,7 +357,7 @@ class LLMNeedleHaystackTester:
             print(f"Score: {score}")
             print(f"Response: {response}\n")
 
-        context_file_location = f'{self.model_version.replace(".", "_")}_len_{context_length}_depth_{int(depth_percent*100)}'
+        context_file_location = f'{self.model_version.replace(".", "_")}_len_{context_length}_depth_{int(depth_percent * 100)}'
 
         if self.save_contexts:
             results["file_name"] = context_file_location
@@ -357,9 +370,9 @@ class LLMNeedleHaystackTester:
                 os.makedirs(f"contexts/{self.model_version}")
 
             with open(
-                f"contexts/{self.model_version}/{context_file_location}_context.txt",
-                "w",
-                encoding="utf-8",
+                    f"contexts/{self.model_version}/{context_file_location}_context.txt",
+                    "w",
+                    encoding="utf-8",
             ) as f:
                 f.write(context)
 
@@ -396,10 +409,10 @@ class LLMNeedleHaystackTester:
                     model_met = result["model"] == self.model_name
                     # import ipdb; ipdb.set_trace()
                     if (
-                        context_length_met
-                        and depth_percent_met
-                        and version_met
-                        and model_met
+                            context_length_met
+                            and depth_percent_met
+                            and version_met
+                            and model_met
                     ):
                         return True
         return False
@@ -531,6 +544,12 @@ if __name__ == "__main__":
         default=None,
     )
 
+    parser.add_argument(
+        "--quant_path",
+        type=str,
+        default=None,
+    )
+
     args = parser.parse_args()
 
     if args.model_path is not None:
@@ -556,6 +575,7 @@ if __name__ == "__main__":
         document_depth_percent_intervals=args.document_depth_percent_intervals,
         document_depth_percent_min=args.document_depth_percent_min,
         document_depth_percent_max=args.document_depth_percent_max,
+        quant_path=args.quant_path
     )
 
     ht.start_test(args)
