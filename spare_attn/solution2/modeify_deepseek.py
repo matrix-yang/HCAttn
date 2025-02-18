@@ -18,6 +18,7 @@ from transformers.models.llama.modeling_llama import (
 )
 from flash_attn import flash_attn_func, flash_attn_with_kvcache
 import sys
+
 sys.path.append('/ms/FM/lihongbin/code/intellif_sparse_attn/duo-attention/spare_attn')
 from solution2.spare_decode import decode_token, decode_token_ori
 
@@ -26,8 +27,9 @@ from solution2.spare_decode import decode_token, decode_token_ori
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
+    x2 = x[..., x.shape[-1] // 2:]
     return torch.cat((-x2, x1), dim=-1)
+
 
 # Copied from transformers.models.llama.modeling_llama.apply_rotary_pos_emb
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
@@ -66,10 +68,10 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
 
 
 def enable_deepseek_approx_attention_eval(
-        model: LlamaForCausalLM, attn_sum, radio_bag
+        model: LlamaForCausalLM, attn_sum, radio_bag, quanter
 ):
     enable_tuple_kv_cache_for_llama(model)
-    new_forward = warp_forward(attn_sum, radio_bag)
+    new_forward = warp_forward(attn_sum, radio_bag, quanter)
     for idx, layer in enumerate(model.model.layers):
         module = layer.self_attn
         module.forward = types.MethodType(
@@ -78,7 +80,8 @@ def enable_deepseek_approx_attention_eval(
         # if not hasattr(module, 'rotary_emb'):
         #     module.rotary_emb = model.model.rotary_emb
 
-def warp_forward(attn_sum, radio_bag):
+
+def warp_forward(attn_sum, radio_bag, quanter):
     def new_func(self,
                  hidden_states: torch.Tensor,
                  attention_mask: Optional[torch.Tensor] = None,
@@ -88,15 +91,16 @@ def warp_forward(attn_sum, radio_bag):
                  use_cache: bool = False,
                  **kwargs, ):
         return deepseek_approx_attention_forward(self,
-                                              hidden_states,
-                                              attention_mask,
-                                              position_ids,
-                                              past_key_value,
-                                              output_attentions,
-                                              use_cache,
-                                              attn_sum=attn_sum,
-                                              radio_bag=radio_bag,
-                                              **kwargs)
+                                                 hidden_states,
+                                                 attention_mask,
+                                                 position_ids,
+                                                 past_key_value,
+                                                 output_attentions,
+                                                 use_cache,
+                                                 attn_sum=attn_sum,
+                                                 radio_bag=radio_bag,
+                                                 quanter=quanter,
+                                                 **kwargs)
 
     return new_func
 
@@ -111,8 +115,9 @@ def deepseek_approx_attention_forward(
         use_cache: bool = False,
         attn_sum=0.95,
         radio_bag=[],
+        quanter='none',
         **kwargs,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     bsz, q_len, _ = hidden_states.size()
     hidden_states = hidden_states.to(self.q_proj.weight.device)
     # print(hidden_states.device)
@@ -127,7 +132,9 @@ def deepseek_approx_attention_forward(
     )
 
     compressed_kv = self.kv_a_proj_with_mqa(hidden_states)
-    print('compressed_kv',hidden_states.shape,compressed_kv.shape)
+    if quanter != 'none' and q_len != 1:
+        compressed_kv = quanter.quant(compressed_kv)
+    # print('compressed_kv',hidden_states.shape,compressed_kv.shape)
     compressed_kv, k_pe = torch.split(
         compressed_kv, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1
     )
@@ -160,12 +167,12 @@ def deepseek_approx_attention_forward(
 
     query_states = k_pe.new_empty(bsz, self.num_heads, q_len, self.q_head_dim)
     query_states[:, :, :, : self.qk_nope_head_dim] = q_nope
-    query_states[:, :, :, self.qk_nope_head_dim :] = q_pe
+    query_states[:, :, :, self.qk_nope_head_dim:] = q_pe
 
     key_states = k_pe.new_empty(bsz, self.num_heads, q_len, self.q_head_dim)
     key_states[:, :, :, : self.qk_nope_head_dim] = k_nope
-    key_states[:, :, :, self.qk_nope_head_dim :] = k_pe
-    
+    key_states[:, :, :, self.qk_nope_head_dim:] = k_pe
+
     if self.q_head_dim != self.v_head_dim:
         value_states = F.pad(value_states, [0, self.q_head_dim - self.v_head_dim])
 
@@ -173,6 +180,8 @@ def deepseek_approx_attention_forward(
     key_states = key_states.transpose(1, 2)
     value_states = value_states.transpose(1, 2)
 
+    # print('q', query_states.shape)
+    # print('k', key_states.shape)
     if past_key_value is not None:
         # cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
         # key_states, value_states = past_key_value.update(
@@ -182,7 +191,6 @@ def deepseek_approx_attention_forward(
         key_states = torch.cat([past_key_value[0].transpose(1, 2), key_states], dim=1)
         value_states = torch.cat([past_key_value[1].transpose(1, 2), value_states], dim=1)
 
-   
     # print("q trans", query_states.shape)
     # print("k trans", key_states.shape)
     # print("v trans", value_states.shape)
@@ -198,7 +206,7 @@ def deepseek_approx_attention_forward(
         # )
         # print((attn_output-attn_output1)/attn_output)
         # print(attn_output.shape)
-        
+
         # if self.q_head_dim != self.v_head_dim:
         #     attn_output = attn_output[:, :, :, : self.v_head_dim]
         # attn_output = attn_output.reshape(bsz, q_len, -1).contiguous()
