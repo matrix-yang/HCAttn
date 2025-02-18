@@ -204,7 +204,7 @@ if __name__ == "__main__":
         print(f'use quant {quant_path} quant dims {args.quant_dims}')
     if 'Llama' in model_name:
         llama_chat = LLamaChat(model_path, attn_sum, quant_path, modify=modify, dims=args.quant_dims)
-    elif 'Deepseek' in model_name:
+    elif 'DeepSeek' in model_name:
         llama_chat = DeepseekChat(model_path, attn_sum, quant_path, modify=modify, dims=args.quant_dims)
     else:
         llama_chat = LLamaChat(model_path, attn_sum, quant_path, modify=modify, dims=args.quant_dims)

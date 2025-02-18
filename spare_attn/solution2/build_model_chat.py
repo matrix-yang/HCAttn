@@ -54,6 +54,27 @@ def load_model_and_tokenizer(path):
     model = model.eval()
     return model, tokenizer, eos_token_ids
 
+def load_ds_model_and_tokenizer(path):
+    tokenizer = AutoTokenizer.from_pretrained(
+        path, trust_remote_code=True, use_fast=False
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        path,
+        torch_dtype=torch.bfloat16,
+        _attn_implementation='eager',
+        trust_remote_code=True,
+        device_map='auto'
+    )
+
+    generation_config = GenerationConfig.from_pretrained(path)
+    eos_token_ids = generation_config.eos_token_id
+    if not isinstance(eos_token_ids, list):
+        eos_token_ids = [eos_token_ids]
+
+    model = model.eval()
+    return model, tokenizer, eos_token_ids
+
+
 
 from spare_attn.solution2.simulation_quant_k import Quanter
 
@@ -194,7 +215,7 @@ class QwenChat(LLamaChat):
         # llama_model2path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7B-32K-Instruct'
         self.model_path = model_path
         self.radio_bag = []
-        model, tokenizer, eos_token_ids = load_model_and_tokenizer(model_path)
+        model, tokenizer, eos_token_ids = load_ds_model_and_tokenizer(model_path)
         if modify:
             from spare_attn.solution2.modeify_qwen import enable_qwen_approx_attention_eval
             enable_qwen_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)

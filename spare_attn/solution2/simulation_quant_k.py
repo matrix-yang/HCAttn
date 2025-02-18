@@ -145,7 +145,7 @@ class DSQuanter():
         if dims == 0:
             self.dims = vectors.shape[-1]
         print(f'use quant {p} vectors shape is {vectors.shape} dims {self.dims}')
-        self.gpu_index, self.vectors = load_index(vectors[0], self.dims)
+        self.gpu_index, self.vectors = load_index(vectors, self.dims)
 
     def quant(self, compressed_kv):
         device = compressed_kv.device
