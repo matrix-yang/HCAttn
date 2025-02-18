@@ -471,6 +471,7 @@ def old_llama_decoder_layer_forward(
         use_cache=use_cache,
         padding_mask=padding_mask,
     )
+    residual = residual.to(hidden_states.device)
     hidden_states = residual + hidden_states
 
     # Fully Connected
