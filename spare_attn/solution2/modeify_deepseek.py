@@ -115,7 +115,7 @@ def deepseek_approx_attention_forward(
         use_cache: bool = False,
         attn_sum=0.95,
         radio_bag=[],
-        quanter='none',
+        quanter=None,
         **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     bsz, q_len, _ = hidden_states.size()
@@ -132,7 +132,7 @@ def deepseek_approx_attention_forward(
     )
 
     compressed_kv = self.kv_a_proj_with_mqa(hidden_states)
-    if quanter != 'none' and q_len != 1:
+    if quanter != None and q_len != 1:
         compressed_kv = quanter.quant(compressed_kv)
     # print('compressed_kv',hidden_states.shape,compressed_kv.shape)
     compressed_kv, k_pe = torch.split(

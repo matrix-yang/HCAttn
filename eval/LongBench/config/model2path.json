@@ -5,5 +5,6 @@
     "Mistral-7B-Instruct-v0.3": "/ms/FM/ydq/kvcache/Mistral-7B-Instruct-v0.3",
     "Llama-3-8B-Instruct-Gradient-1048k": "/ms/FM/ydq/kvcache/Llama-3-8B-Instruct-Gradient-1048k",
     "Meta-Llama-3.1-8B-Instruct": "/ms/FM/ydq/kvcache/Meta-Llama-3.1-8B-Instruct",
+    "DeepSeek-V2-Lite-Chat": "/ms/FM/ydq/kvcache/DeepSeek-V2-Lite-Chat",
     "Qwen2.5-7B-Instruct-1M": "/ms/FM/ydq/kvcache/Qwen2.5-7B-Instruct-1M"
 }

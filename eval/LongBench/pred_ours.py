@@ -116,7 +116,7 @@ def get_pred(
             )
             past_key_values = output.past_key_values
 
-            if not args.no_quant:
+            if quanter != None:
                 # print('---------------use quant------------------')
                 past_key_values = quanter.quant(past_key_values)
                 # print('mem use before clear', torch.cuda.memory_allocated())
@@ -183,7 +183,7 @@ def seed_everything(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-from spare_attn.solution2.build_model_chat import LLamaChat
+from spare_attn.solution2.build_model_chat import LLamaChat, DeepseekChat
 
 if __name__ == "__main__":
     seed_everything(42)
@@ -197,13 +197,15 @@ if __name__ == "__main__":
     attn_sum = args.attn_sum
     quant_path = args.quant_path
     modify = args.modify
-    if quant_path =="none":
+    if quant_path == "none":
         quant_path = None
         print(f'this test dont ues quant')
     else:
         print(f'use quant {quant_path} quant dims {args.quant_dims}')
     if 'Llama' in model_name:
-        llama_chat = LLamaChat(model_path, attn_sum, quant_path,modify=modify,dims=args.quant_dims)
+        llama_chat = LLamaChat(model_path, attn_sum, quant_path, modify=modify, dims=args.quant_dims)
+    elif 'Deepseek' in model_name:
+        llama_chat = DeepseekChat(model_path, attn_sum, quant_path, modify=modify, dims=args.quant_dims)
     else:
         llama_chat = LLamaChat(model_path, attn_sum, quant_path, modify=modify, dims=args.quant_dims)
     model = llama_chat.model
@@ -248,7 +250,7 @@ if __name__ == "__main__":
         if not os.path.exists(f"eval/LongBench/pred/{model_name}"):
             os.makedirs(f"eval/LongBench/pred/{model_name}")
         if not args.no_quant:
-            quant_name=quant_path.split('/')[-1][:-4]
+            quant_name = quant_path.split('/')[-1][:-4]
             out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}_{quant_name}_{modify}.jsonl"
         else:
             out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}_no_quant_{modify}.jsonl"
@@ -270,7 +272,7 @@ if __name__ == "__main__":
             dataset,
             model_name,
             args.decoding_simulation_length,
-            quanter=llama_chat.quanter
+            quanter=getattr(llama_chat, "quanter", None)
         )
         print("{} ues cache radio: {:.5f}".format(dataset, np.mean(llama_chat.radio_bag)))
         with open(out_path, "w", encoding="utf-8") as f:

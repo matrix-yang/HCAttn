@@ -261,3 +261,33 @@ class QwenChat(LLamaChat):
 
         pred = self.tokenizer.decode(generated_content, skip_special_tokens=True)
         return pred, generated_logits
+
+
+
+class DeepseekChat:
+    def __init__(self, model_path, attn_sum, quant_path, modify, dims=4):
+        seed_everything(42)
+        device_list = [0]
+        # model_path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7b-chat-hf'
+        # llama_model2path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7B-32K-Instruct'
+        self.model_path = model_path
+        self.radio_bag = []
+        self.modify = modify
+        model, tokenizer, eos_token_ids = load_model_and_tokenizer(model_path)
+        # TOVA需要
+        self.init_past_key_values = None
+
+        if quant_path:
+            from spare_attn.solution2.simulation_quant_k import DSQuanter
+            self.dsquanter = DSQuanter(quant_path, 0)
+            self.is_quant = True
+        else:
+            self.quanter = None
+            self.is_quant = False
+
+        from spare_attn.solution2.modeify_deepseek import enable_deepseek_approx_attention_eval
+        enable_deepseek_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag,quanter=self.dsquanter)
+        self.model = to_device(model, device_list, enable_tp=True)
+        self.tokenizer = tokenizer
+        self.eos_token_ids = eos_token_ids
+
