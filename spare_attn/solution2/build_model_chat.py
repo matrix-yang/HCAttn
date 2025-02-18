@@ -86,6 +86,9 @@ class LLamaChat:
             # self.init_past_key_values =TOVACache(cache_size=128,radio=0.5)
             from spare_attn.solution2.tova_modeify_llama import enable_llama_approx_attention_eval
             enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
+        elif modify == "deepseek":
+            from spare_attn.solution2.modeify_deepseek import enable_deepseek_approx_attention_eval
+            enable_deepseek_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
         else:
             print("-" * 50)
             print("this test dont modify attn fwd")
