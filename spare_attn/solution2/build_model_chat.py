@@ -107,9 +107,6 @@ class LLamaChat:
             # self.init_past_key_values =TOVACache(cache_size=128,radio=0.5)
             from spare_attn.solution2.tova_modeify_llama import enable_llama_approx_attention_eval
             enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
-        elif modify == "deepseek":
-            from spare_attn.solution2.modeify_deepseek import enable_deepseek_approx_attention_eval
-            enable_deepseek_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
         else:
             print("-" * 50)
             print("this test dont modify attn fwd")
@@ -215,7 +212,7 @@ class QwenChat(LLamaChat):
         # llama_model2path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7B-32K-Instruct'
         self.model_path = model_path
         self.radio_bag = []
-        model, tokenizer, eos_token_ids = load_ds_model_and_tokenizer(model_path)
+        model, tokenizer, eos_token_ids = load_model_and_tokenizer(model_path)
         if modify:
             from spare_attn.solution2.modeify_qwen import enable_qwen_approx_attention_eval
             enable_qwen_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
@@ -294,7 +291,7 @@ class DeepseekChat:
         self.model_path = model_path
         self.radio_bag = []
         self.modify = modify
-        model, tokenizer, eos_token_ids = load_model_and_tokenizer(model_path)
+        model, tokenizer, eos_token_ids = load_ds_model_and_tokenizer(model_path)
         # TOVA需要
         self.init_past_key_values = None
 
@@ -308,7 +305,7 @@ class DeepseekChat:
 
         from spare_attn.solution2.modeify_deepseek import enable_deepseek_approx_attention_eval
         enable_deepseek_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag,quanter=self.dsquanter)
-        self.model = to_device(model, device_list, enable_tp=True)
+        self.model = model
         self.tokenizer = tokenizer
         self.eos_token_ids = eos_token_ids
 
