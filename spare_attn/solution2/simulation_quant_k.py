@@ -1,11 +1,14 @@
 import faiss
 import numpy as np
 import torch
-
+import threading
+import concurrent
+from tqdm import tqdm
 
 def load_index(vectors, dimension):
     index = faiss.IndexFlatL2(dimension)
     res = faiss.StandardGpuResources()
+    res.setTempMemory(16 * 1024 * 1024)
     gpu_index = faiss.index_cpu_to_gpu(res, 0, index)
     gpu_index.add(vectors)
     return gpu_index, vectors
@@ -141,13 +144,17 @@ class KVQuanter():
 class DSQuanter():
     def __init__(self, p, dims=0):
         # p = '/nfs/hw-data/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
-        vectors = np.load(p)
+        if isinstance(p, str):
+            vectors = np.load(p)
+        else:
+            vectors = p
         if dims == 0:
             self.dims = vectors.shape[-1]
         print(f'use quant {p} vectors shape is {vectors.shape} dims {self.dims}')
         self.gpu_index, self.vectors = load_index(vectors, self.dims)
 
     def quant(self, compressed_kv):
+        # bsz len 576
         device = compressed_kv.device
         dtype = compressed_kv.dtype
         rbkv = batch_rebuid_no_norm_k(compressed_kv, self.gpu_index, self.vectors, self.dims)
@@ -175,3 +182,60 @@ class NormQuanter():
                                range(selected_k.shape[0])]
         # print(f'K shape {k.shape} cal sim {b - a} cal cmp {c - b} replace{d - c} all {d - a}')
         return new_past_key_values
+
+class SDSQuanter():
+    def __init__(self, p, dims=0):
+        # p = '/nfs/hw-data/ms/FM/ydq/notebook/duo_attn/no_norm_4bits_8196.npy'
+        if isinstance(p, str):
+            vectors = np.load(p)
+        else:
+            vectors = p
+        if dims == 0:
+            self.dims = vectors.shape[-1]
+        print(f'use quant shape is {vectors.shape} dims {self.dims}')
+        self.gpu_index, self.vectors = load_index(vectors, self.dims)
+
+    def quant(self, compressed_kv,i):
+        # bsz len 576
+        device = compressed_kv.device
+        dtype = compressed_kv.dtype
+        rbkv = batch_rebuid_no_norm_k(compressed_kv, self.gpu_index, self.vectors, self.dims)
+        del compressed_kv
+        torch.cuda.empty_cache()
+        rb_compressed_kv = torch.from_numpy(rbkv).to(dtype).to(device)
+        return rb_compressed_kv,i
+
+class MultiDSQuanter():
+    def __init__(self, p, dims=0):
+        self.qs = []
+        self.rebuild_kv = []
+        if isinstance(p, str):
+            vectors = np.load(p)
+        else:
+            vectors = p
+        self.centroids_group_count = vectors.shape[0]
+        self.dims = vectors.shape[-1]
+        # print("centroids_group_count: ", self.centroids_group_count)
+        # p = "/ms/FM/ydq/notebook/duo_attn/quant/cluster/setting2_16_256_8.npy" # 16,256,8
+        for i in tqdm(range(self.centroids_group_count)):
+            current_vectors = vectors[i, :, :]
+            # print(current_vectors)
+            test_quan = SDSQuanter(current_vectors, dims)
+            self.qs.append(test_quan)
+
+    def quant(self, compressed_kv):
+        bsz, len, dim = compressed_kv.shape
+        compressed_kv = compressed_kv.reshape(bsz, len, self.centroids_group_count, self.dims)
+        results_list = [None] * self.centroids_group_count
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.centroids_group_count) as executor:
+            futures = [executor.submit(self.qs[i].quant, compressed_kv[:, :, i, :],i)
+                       for i in range(self.centroids_group_count)]
+
+        for future in futures:
+            rbk_cuda, i = future.result()
+            results_list[i] = rbk_cuda
+        del compressed_kv
+        torch.cuda.empty_cache()
+
+        compressed_kv = torch.stack(results_list, dim=2)
+        return compressed_kv.reshape(bsz, len, dim)

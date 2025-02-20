@@ -296,8 +296,13 @@ class DeepseekChat:
         self.init_past_key_values = None
 
         if quant_path:
-            from spare_attn.solution2.simulation_quant_k import DSQuanter
-            self.dsquanter = DSQuanter(quant_path, 0)
+            from spare_attn.solution2.simulation_quant_k import DSQuanter,MultiDSQuanter
+            vectors = np.load(quant_path)
+            print(f'use quant path is {quant_path}')
+            if len(vectors.shape)==2:
+                self.dsquanter = DSQuanter(vectors, 0)
+            else:
+                self.dsquanter = MultiDSQuanter(vectors, 0)
             self.is_quant = True
         else:
             self.quanter = None
