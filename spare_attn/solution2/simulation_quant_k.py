@@ -71,7 +71,10 @@ class Quanter():
         if dims == 0:
             self.dims = vectors.shape[-1]
         print(f'use quant {p} dims {self.dims}')
-        self.gpu_index, self.vectors = load_index(vectors[0], self.dims)
+        # old [count,dim] new[group,count,dim]
+        if len(vectors.shape)==3:
+            vectors=vectors[0]
+        self.gpu_index, self.vectors = load_index(vectors, self.dims)
 
     def quant(self, past_key_values):
         # print('----------do_quant')

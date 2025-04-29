@@ -34,7 +34,7 @@ def parse_args(args=None):
     parser.add_argument("--attn_sum", type=float, default=0.5)
     parser.add_argument("--no_quant", action="store_true")
     parser.add_argument("--quant_path", type=str, default="")
-    parser.add_argument("--quant_dims", type=int, default=4)
+    parser.add_argument("--quant_dims", type=int, default=0)
     parser.add_argument("--modify", type=str, default="ours")
     return parser.parse_args(args)
 
@@ -233,7 +233,8 @@ if __name__ == "__main__":
             "repobench-p",
         ]
     else:
-        datasets = [args.task]
+        datasets = args.task.split(',')
+        print('eval in task',datasets)
     # we design specific prompt format and max generation length for each task, feel free to modify them to optimize model output
     dataset2prompt = json.load(open("eval/LongBench/config/dataset2prompt.json", "r"))
     dataset2maxlen = json.load(open("eval/LongBench/config/dataset2maxlen.json", "r"))
@@ -247,13 +248,14 @@ if __name__ == "__main__":
     for dataset in datasets:
         lb_path = '/ms/FM/ydq/kvcache/duo-attention/THUDM/LongBench/LongBench.py'
         data = load_dataset(lb_path, dataset, split="test")
-        if not os.path.exists(f"eval/LongBench/pred/{model_name}"):
-            os.makedirs(f"eval/LongBench/pred/{model_name}")
-        if not args.no_quant:
+        out_base_path=f"eval/LongBench/pred/{model_name}_2025"
+        if not os.path.exists(out_base_path):
+            os.makedirs(out_base_path)
+        if quant_path:
             quant_name = quant_path.split('/')[-1][:-4]
-            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}_{quant_name}_{modify}.jsonl"
+            out_path = out_base_path+f"/{dataset}-attn_{attn_sum}_{quant_name}_{modify}.jsonl"
         else:
-            out_path = f"eval/LongBench/pred/{model_name}/{dataset}-attn_{attn_sum}_no_quant_{modify}.jsonl"
+            out_path = out_base_path+f"/{dataset}-attn_{attn_sum}_no_quant_{modify}.jsonl"
 
         if os.path.exists(out_path):
             print(f'{out_path} is exists pass dataset {dataset}')
