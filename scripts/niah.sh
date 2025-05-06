@@ -8,13 +8,12 @@ context_lengths_min=$4
 s_len=$5
 pretrained_len=$6
 model_provider=$7
-quant_path=$8
 
 # cut the last part of the path of the attn_pattern to get the name
 attn_pattern_name=$(echo $attn_pattern | rev | cut -d'/' -f1 | rev)
 quant_name=$(echo $quant_path | rev | cut -d'/' -f1 | rev)
 
-suffix="duo_attn-attn_pattern=${attn_pattern_name}-sparsity=${sparsity}-quant_path=${quant_name}"
+suffix="duo_attn-attn_pattern=${attn_pattern_name}-sparsity=${sparsity}"
 (
     python -u needle_in_haystack.py --s_len $s_len \
         --e_len $pretrained_len \
@@ -30,8 +29,7 @@ suffix="duo_attn-attn_pattern=${attn_pattern_name}-sparsity=${sparsity}-quant_pa
         --sink_size 64 \
         --recent_size 256 \
         --prefilling_chunk_size 32000 \
-        --model_path /ms/FM/ydq/kvcache/${model} \
-        --quant_path $quant_path
+        --model_path /ms/FM/ydq/kvcache/${model}
 
 ) 2>&1 | tee logs/eval_${model}_${suffix}.log
 

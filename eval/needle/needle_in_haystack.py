@@ -59,7 +59,6 @@ class LLMNeedleHaystackTester:
             attn_load_dir=None,
             sparsity=0.5,
             simulation_length=50,
-            quant_path='none'
     ):
         """
         :param needle: The needle to be found in the haystack. Default is None.
@@ -221,13 +220,13 @@ class LLMNeedleHaystackTester:
         self.simulation_length = simulation_length
         model_name = model_name.split("/")[-1]
 
-        if quant_path != 'none':
-            from spare_attn.solution2.simulation_quant_k import KVQuanter
-            self.quanter = KVQuanter(quant_path, dims=0)
-            self.is_quant = True
-        else:
-            print('dont ues quant')
-            self.is_quant = False
+        # if quant_path != 'none':
+        #     from spare_attn.solution2.simulation_quant_k import KVQuanter
+        #     self.quanter = KVQuanter(quant_path, dims=0)
+        #     self.is_quant = True
+        # else:
+        #     print('dont ues quant')
+        #     self.is_quant = False
 
     def logistic(self, x, L=100, x0=50, k=0.1):
         if x == 0:
@@ -307,9 +306,9 @@ class LLMNeedleHaystackTester:
                 )
                 past_key_values = output.past_key_values
 
-            if self.is_quant:
-                # pass
-                past_key_values = self.quanter.quant(past_key_values)
+            # if self.is_quant:
+            #     # pass
+            #     past_key_values = self.quanter.quant(past_key_values)
 
             pred_token_idx = output.logits[:, -1, :].argmax(dim=-1).unsqueeze(1)
             generated_content = [pred_token_idx.item()]
@@ -544,11 +543,11 @@ if __name__ == "__main__":
         default=None,
     )
 
-    parser.add_argument(
-        "--quant_path",
-        type=str,
-        default=None,
-    )
+    # parser.add_argument(
+    #     "--quant_path",
+    #     type=str,
+    #     default=None,
+    # )
 
     args = parser.parse_args()
 
@@ -574,8 +573,7 @@ if __name__ == "__main__":
         context_lengths_num_intervals=args.context_lengths_num_intervals,
         document_depth_percent_intervals=args.document_depth_percent_intervals,
         document_depth_percent_min=args.document_depth_percent_min,
-        document_depth_percent_max=args.document_depth_percent_max,
-        quant_path=args.quant_path
+        document_depth_percent_max=args.document_depth_percent_max
     )
 
     ht.start_test(args)
