@@ -44,15 +44,16 @@ def rebuid_no_norm_k(key_tensor, gpu_index, vectors):
     return rebuild_kk
 
 
-def batch_rebuid_no_norm_k(key_tensor, gpu_index, vectors, bits):
-    k = key_tensor.cpu().to(torch.float).numpy()
+def batch_rebuid_no_norm_k(k, gpu_index, vectors, bits):
+
     k_size = k.shape
     # print(k.dtype)
     # print(vectors.shape)
     # k_norms=np.linalg.norm(k, ord=2, axis=-1,keepdims=True)
     # normlize_k=k/k_norms
     low_k = k.reshape(-1, bits)
-    batch = 32 * 32 * 32 * 1024
+    #batch = 32 * 32 * 32 * 1024
+    batch =  32 * 32 * 32 * 512
     all_indices = np.zeros(low_k.shape[0], dtype=np.int32)
     for i in range(0, low_k.shape[0], batch):
         distances, indices = gpu_index.search(low_k[i:i + batch], 1)
@@ -80,13 +81,16 @@ class Quanter():
         # print('----------do_quant')
         new_past_key_values = []
         # bsz head len 128
-        k = torch.cat([past_key_values[i][0] for i in range(32)])
+        key_tensor = torch.cat([past_key_values[i][0] for i in range(32)])
         v = torch.cat([past_key_values[i][1] for i in range(32)])
         # print('k.shape',k.shape)
         # rbk = rebuid_no_norm_k(k, self.gpu_index, self.vectors)
-        rbk = batch_rebuid_no_norm_k(k, self.gpu_index, self.vectors, self.dims)
-        del k
+        k = key_tensor.cpu().to(torch.float).numpy()
+        del key_tensor
+        del past_key_values
         torch.cuda.empty_cache()
+
+        rbk = batch_rebuid_no_norm_k(k, self.gpu_index, self.vectors, self.dims)
         selected_k = torch.from_numpy(rbk).to(v.dtype).cuda()
         selected_v = v
         # unsqueeze bsz
