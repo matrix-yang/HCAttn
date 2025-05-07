@@ -30,13 +30,18 @@ class LLMNeedleHaystackTester:
     """
     This class is used to test the LLM Needle Haystack.
     """
-
+    # needle="\n\nRemember, the best thing to do in Shenzhen is eat an apple and sit in park on a sunny day.\n\n",
+    # haystack_dir = "PaulGrahamEssays",
+    # retrieval_question="what is the best thing to do in Shenzhen?\n\nAnswer: The best thing to do in Shenzhen is",
+    # needle = "\n\nRemember, the best thing to do in San Francisco is eat a sandwich and sit in Dolores Park on a sunny day.\n\n",
+    # haystack_dir = "PaulGrahamEssays",
+    # retrieval_question = "what is the best thing to do in San Francisco?\n\nAnswer: The best thing to do in San Francisco is",
     def __init__(
             self,
             args,
-            needle="\n\nRemember, the best thing to do in San Francisco is eat a sandwich and sit in Dolores Park on a sunny day.\n\n",
-            haystack_dir="PaulGrahamEssays",
-            retrieval_question="what is the best thing to do in San Francisco?\n\nAnswer: The best thing to do in San Francisco is",
+            needle="\n\nRemember, the best thing to do in Paris is buy a fresh croissant and lounge by the Seine at twilight.\n\n",
+            haystack_dir = "PaulGrahamEssays",
+            retrieval_question="what is the best thing to do in Paris?\n\nAnswer: The best thing to do in Paris is",
             results_version=1,
             context_lengths_min=1000,
             context_lengths_max=1048000,

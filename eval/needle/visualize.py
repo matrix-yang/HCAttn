@@ -60,8 +60,10 @@ def main():
             # score = json_data.get("score", None)
             model_response = json_data.get("model_response", None).lower()
             needle = json_data.get("needle", None).lower()
+            #"buy a fresh croissant and lounge by the Seine at twilight."
+            #"eat a sandwich and sit in Dolores Park on a sunny day."
             expected_answer = (
-                "eat a sandwich and sit in Dolores Park on a sunny day.".lower().split()
+                "buy a fresh croissant and lounge by the Seine at twilight.".lower().split()
             )
             score = len(
                 set(model_response.split()).intersection(set(expected_answer))

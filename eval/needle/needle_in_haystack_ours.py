@@ -36,9 +36,9 @@ class LLMNeedleHaystackTester:
     def __init__(
         self,
         args,
-        needle="\n\nRemember, the best thing to do in San Francisco is eat a sandwich and sit in Dolores Park on a sunny day.\n\n",
+        needle="\n\nRemember, the best thing to do in Paris is buy a fresh croissant and lounge by the Seine at twilight.\n\n",
         haystack_dir="PaulGrahamEssays",
-        retrieval_question="what is the best thing to do in San Francisco?\n\nAnswer: The best thing to do in San Francisco is",
+        retrieval_question="what is the best thing to do in Paris?\n\nAnswer: The best thing to do in Paris is",
         results_version=1,
         context_lengths_min=1000,
         context_lengths_max=1048000,
@@ -195,7 +195,7 @@ class LLMNeedleHaystackTester:
             from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
             enable_llama_approx_attention_eval(self.model_to_test, attn_sum=attn_sum, radio_bag=self.radio_bag)
         elif modify == "sllm":
-            from spare_attn.solution2.sllm_modeify_llama import enable_llama_approx_attention_eval
+            from spare_attn.solution2.sllm_modeify_llama_v2 import enable_llama_approx_attention_eval
             enable_llama_approx_attention_eval(self.model_to_test, attn_sum=attn_sum, radio_bag=self.radio_bag)
         elif modify == "h2o":
             from spare_attn.solution2.h2o_modeify_llama import enable_llama_approx_attention_eval
