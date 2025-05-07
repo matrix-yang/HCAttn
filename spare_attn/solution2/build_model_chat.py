@@ -80,7 +80,7 @@ from spare_attn.solution2.simulation_quant_k import Quanter
 
 
 class LLamaChat:
-    def __init__(self, model_path, attn_sum, quant_path, modify, dims=4):
+    def __init__(self, model_path, attn_sum, quant_path, modify, dims=0):
         seed_everything(42)
         device_list = [0]
         # model_path='/nfs/hw-data/ms/FM/ydq/kvcache/Llama-2-7b-chat-hf'
@@ -95,7 +95,7 @@ class LLamaChat:
             from spare_attn.solution2.modeify_llama import enable_llama_approx_attention_eval
             enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
         elif modify == "sllm":
-            from spare_attn.solution2.sllm_modeify_llama import enable_llama_approx_attention_eval
+            from spare_attn.solution2.sllm_modeify_llama_v2 import enable_llama_approx_attention_eval
             enable_llama_approx_attention_eval(model, attn_sum=attn_sum, radio_bag=self.radio_bag)
         elif modify == "h2o":
             from spare_attn.solution2.h2o_modeify_llama import enable_llama_approx_attention_eval
