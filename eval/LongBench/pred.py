@@ -259,7 +259,9 @@ if __name__ == "__main__":
             "repobench-p",
         ]
     else:
-        datasets = [args.task]
+        datasets = args.task.split(',')
+        print('eval in task', datasets)
+        #datasets = [args.task]
     # we design specific prompt format and max generation length for each task, feel free to modify them to optimize model output
     dataset2prompt = json.load(open("eval/LongBench/config/dataset2prompt.json", "r"))
     dataset2maxlen = json.load(open("eval/LongBench/config/dataset2maxlen.json", "r"))
