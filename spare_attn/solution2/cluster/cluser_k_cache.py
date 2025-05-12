@@ -4,19 +4,24 @@ import numpy as np
 
 import numpy as np
 import os
-
+import sys
 
 
 if __name__ == '__main__':
 
-    cache_save_path = 'Llama-2-7B-32K-Instruct_k_cache'
-    cids_save_name='no_norm_8bits_8196_32K_vec3.npy'
+
+    dim = int(sys.argv[1])
+    bits=int(16 / dim)
+    cache_save_dir = '/ms/FM/ydq/notebook/duo_attn/quant/kv_cache_dir_1024K_2025/'
+    cids_save_name = f'/ms/FM/ydq/notebook/duo_attn/quant/dim{dim}_equal_{bits}bits_8192_1024K_vec3.npy'
+
+    print(f'use cache dir is {cache_save_dir} \nsave to{cids_save_name}')
 
 
     k_bag = []
     cnt = 0
-    for fn in os.listdir(f'./{cache_save_path}/'):
-        fp = './kv_cache_dir/' + fn
+    for fn in os.listdir(cache_save_dir):
+        fp = cache_save_dir + fn
         kv = np.load(fp)
         print(kv.shape)
         k = kv[:, 0]
@@ -27,15 +32,15 @@ if __name__ == '__main__':
         if cnt > 2:
             break
 
-
     k_bag_tensor = np.vstack(k_bag)
     # 假设 X 是您的数据矩阵
-    X = k_bag[0].reshape(-1, 128)  # 示例大数据集
+    # X = k_bag[0].reshape(-1, 128)  # 示例大数据集
+    X = k_bag_tensor
     # 归一化数据到单位长度
-    #X_normalized = normalize(X, norm='l2')
-    X_split=X.reshape(-1,2)
+    # X_normalized = normalize(X, norm='l2')
+    X_split = X.reshape(-1, dim)
     # 使用 MiniBatchKMeans 进行聚类
-    minibatch_kmeans = MiniBatchKMeans(n_clusters=8196,max_iter=200, batch_size=10000, random_state=0)
+    minibatch_kmeans = MiniBatchKMeans(n_clusters=8192, max_iter=200, batch_size=10000, random_state=0)
     minibatch_kmeans.fit(X_split)
 
     labels = minibatch_kmeans.labels_
