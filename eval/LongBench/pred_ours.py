@@ -36,6 +36,7 @@ def parse_args(args=None):
     parser.add_argument("--quant_path", type=str, default="")
     parser.add_argument("--quant_dims", type=int, default=0)
     parser.add_argument("--modify", type=str, default="ours")
+    parser.add_argument("--prefix", type=str, default="")
     return parser.parse_args(args)
 
 
@@ -196,6 +197,8 @@ if __name__ == "__main__":
     model_path = model2path[model_name]
     attn_sum = args.attn_sum
     quant_path = args.quant_path
+    prefix=args.prefix
+
     modify = args.modify
     if quant_path == "none":
         quant_path = None
@@ -253,9 +256,9 @@ if __name__ == "__main__":
             os.makedirs(out_base_path)
         if quant_path:
             quant_name = quant_path.split('/')[-1][:-4]
-            out_path = out_base_path+f"/{dataset}-attn_{attn_sum}_{quant_name}_{modify}.jsonl"
+            out_path = out_base_path+f"/{dataset}-{prefix}attn_{attn_sum}_{quant_name}_{modify}.jsonl"
         else:
-            out_path = out_base_path+f"/{dataset}-attn_{attn_sum}_no_quant_{modify}.jsonl"
+            out_path = out_base_path+f"/{dataset}-{prefix}attn_{attn_sum}_no_quant_{modify}.jsonl"
 
         if os.path.exists(out_path):
             print(f'{out_path} is exists pass dataset {dataset}')
