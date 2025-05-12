@@ -35,8 +35,31 @@ class KIQuanter():
         return all_indices, j
 
 
+class TorchQuanter():
+    def __init__(self, vectors):
+        self.dims = vectors.shape[-1]
+        print(f'use quant shape is {vectors.shape} dims {self.dims}')
+        self.C = vectors
+        self.sumc = (vectors ** 2).sum(dim=1)
+        self.ki_dtype=torch.uint8
+    def quant(self, k, j):
+        bsz=100000
+        # bsz len 576
+        all_len = k.size(0)
+        sumc = self.sumc
+        ki = torch.zeros((all_len),dtype=self.ki_dtype,device=k.device)
+        for i in range(0, all_len, bsz):
+            s = i * bsz
+            b = k[s:s + bsz]
+            sumb = (b ** 2).sum(dim=1, keepdim=True)
+            dot_product = torch.matmul(b, self.C.t())
+            dist = sumb + sumc - 2 * dot_product
+            ki[s:s + bsz] = torch.argmin(dist, dim=-1)
+        return ki, j
+
+
 class MultiGroupQuanter():
-    def __init__(self, p, C_device,C_dtype, dims=0):
+    def __init__(self, p, C_device, C_dtype, dims=0):
         self.qs = []
         self.rebuild_kv = []
         if isinstance(p, str):
@@ -49,9 +72,10 @@ class MultiGroupQuanter():
         # print("centroids_group_count: ", self.centroids_group_count)
         # p = "/ms/FM/ydq/notebook/duo_attn/quant/cluster/setting2_16_256_8.npy" # 16,256,8
         for i in tqdm(range(self.centroids_group_count)):
-            current_vectors = vectors[i, :, :]
+            current_vectors = self.vectors[i, :, :]
             # print(current_vectors)
-            test_quan = KIQuanter(current_vectors)
+            #test_quan = KIQuanter(current_vectors)
+            test_quan = TorchQuanter(current_vectors)
             self.qs.append(test_quan)
 
     def quant(self, compressed_k):
