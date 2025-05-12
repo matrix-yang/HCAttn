@@ -11,9 +11,11 @@ if __name__ == '__main__':
 
 
     dim = int(sys.argv[1])
+    cids = int(sys.argv[2])
     bits=int(16 / dim)
-    cache_save_dir = '/ms/FM/ydq/notebook/duo_attn/quant/kv_cache_dir_1024K_2025/'
-    cids_save_name = f'/ms/FM/ydq/notebook/duo_attn/quant/dim{dim}_equal_{bits}bits_8192_1024K_vec3.npy'
+    #cache_save_dir = '/ms/FM/ydq/notebook/duo_attn/quant/kv_cache_dir_1024K_2025/'
+    cache_save_dir = '/ms/FM/ydq/notebook/duo_attn/quant/kv_cache_dir_2025/'
+    cids_save_name = f'/ms/FM/ydq/notebook/duo_attn/quant/dim{dim}_equal_{bits}bits_{cids}_32K_vec3.npy'
 
     print(f'use cache dir is {cache_save_dir} \nsave to{cids_save_name}')
 
@@ -40,7 +42,7 @@ if __name__ == '__main__':
     # X_normalized = normalize(X, norm='l2')
     X_split = X.reshape(-1, dim)
     # 使用 MiniBatchKMeans 进行聚类
-    minibatch_kmeans = MiniBatchKMeans(n_clusters=8192, max_iter=200, batch_size=10000, random_state=0)
+    minibatch_kmeans = MiniBatchKMeans(n_clusters=cids, max_iter=200, batch_size=10000, random_state=0)
     minibatch_kmeans.fit(X_split)
 
     labels = minibatch_kmeans.labels_
