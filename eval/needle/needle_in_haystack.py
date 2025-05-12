@@ -548,11 +548,20 @@ if __name__ == "__main__":
         default=None,
     )
 
-    # parser.add_argument(
-    #     "--quant_path",
-    #     type=str,
-    #     default=None,
-    # )
+    # needle =
+    # haystack_dir = "PaulGrahamEssays",
+    # retrieval_question = "what is the best thing to do in San Francisco?\n\nAnswer: The best thing to do in San Francisco is",
+
+    parser.add_argument(
+        "--needle",
+        type=str,
+        default="\n\nRemember, the best thing to do in San Francisco is eat a sandwich and sit in Dolores Park on a sunny day.\n\n",
+    )
+    parser.add_argument(
+        "--retrieval_question",
+        type=str,
+        default="what is the best thing to do in San Francisco?\n\nAnswer: The best thing to do in San Francisco is",
+    )
 
     args = parser.parse_args()
 
@@ -565,6 +574,8 @@ if __name__ == "__main__":
 
     ht = LLMNeedleHaystackTester(
         args=args,
+        needle=args.needle,
+        retrieval_question=args.retrieval_question,
         model_name=model_name,
         model_name_suffix=args.model_name_suffix,
         model_provider=args.model_provider,
