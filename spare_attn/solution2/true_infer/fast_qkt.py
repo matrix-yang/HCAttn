@@ -9,7 +9,7 @@ def fast_qK(q, ki, C):
     g,cid_len,dim=C.shape
     k_len=ki.shape[-2]
     q = q.reshape(bsz * head * qn, g, dim).unsqueeze(-2)
-    q_ = torch.matmul(q, C.transpose(-1, -2))
+    q_ = torch.matmul(q.float(), C.transpose(-1, -2).float())
     q_ = q_.reshape(bsz, head, qn, g, cid_len)
     q_expand = q_.unsqueeze(-3)
     q_expand = q_expand.expand(-1, -1, -1, k_len, -1, -1)
@@ -35,8 +35,49 @@ def sparse_v_sum(atten, values, th):
     attn_output = torch.matmul(select_attn.unsqueeze(-2), select_value).squeeze(-2)
     return attn_output.cuda()
 
+def sparse_v_sum_v2(attention_probs,value_states,sum_value):
+    if sum_value>=1:
+        attn_output = torch.matmul(attention_probs, value_states)
+        return attn_output
+    attention_probs=attention_probs.squeeze(0)
+    value_states = value_states.squeeze(0)
+    sorted_indices = torch.argsort(attention_probs, descending=True, dim=-1)
+    # print(sorted_indices.shape)
+    # search_index_ls = [16, 32, 64, 96, 128, 256, 384, 512, 768, attention_probs.shape[-1]]
+    step = max(1,int(attention_probs.shape[-1] / 100))
+    search_index_ls = np.arange(1, attention_probs.shape[-1], step)
+    search_index_ls = np.append(search_index_ls, attention_probs.shape[-1])
+    for i in search_index_ls:
+        result = torch.gather(attention_probs, dim=-1, index=sorted_indices[:, :, :i])
+        # print(result.shape,result.sum(-1))
+        #print('----------', sorted_indices.shape, result.shape)
+        if all(result.sum(-1) >= sum_value):
+            break
+    selected_indices = sorted_indices[:, :, :i]
+    # print('selected_indices',selected_indices)
+    selected_indices = selected_indices.sort(dim=-1).values
+    # 按原始顺序去除这些索引
+    # print(len(selected_indices),selected_indices)
+    # print(selected_indices.shape)
+    # print(value_states.shape)
+    attn_weights = torch.gather(attention_probs, dim=-1, index=selected_indices).cpu()
+    # print('attn_weights',attn_weights.shape)
+    v_index = selected_indices.squeeze(1).unsqueeze(-1).expand(-1, -1, 128).cpu()
+    # print('v_index',v_index.shape)
+    select_value_states = torch.gather(value_states, dim=-2, index=v_index)
+    # print(attn_weights.shape,value_states.shape)
+    # print('select_value_states',v_index.shape)
+    # print(select_value_states.shape,select_value_states[1,255]==value_states[1,v_index[1,255,0]])
+    attn_output = torch.matmul(attn_weights, select_value_states)
+    #attn_output2 = torch.bmm(attn_weights, select_value_states)
+    #print(attn_output==attn_output2)
+    attn_output = attn_output.unsqueeze(0).transpose(1, 2)
+    # print(attn_output.shape)
+    return attn_output.cuda()
+
 def fast_fwd(q, ki, values,C,th):
     attention_probs = fast_qK(q, ki, C)
-    attn_out = sparse_v_sum(attention_probs, values, th=th)
+    #attn_out = sparse_v_sum(attention_probs, values, th=th)
+    attn_out = sparse_v_sum_v2(attention_probs, values, th)
     return attn_out
 
