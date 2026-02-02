@@ -15,7 +15,7 @@ if __name__ == '__main__':
     bits=int(16 / dim)
     #cache_save_dir = '/ms/FM/ydq/notebook/duo_attn/quant/kv_cache_dir_1024K_2025/'
     cache_save_dir = '/ms/FM/ydq/notebook/duo_attn/quant/kv_cache_dir_2025/'
-    cids_save_name = f'/ms/FM/ydq/notebook/duo_attn/quant/dim{dim}_equal_{bits}bits_{cids}_32K_vec3.npy'
+    cids_save_name = f'/ms/FM/ydq/notebook/duo_attn/quant/dim{dim}_equal_{bits}bits_{cids}_32K_vec2.npy'
 
     print(f'use cache dir is {cache_save_dir} \nsave to{cids_save_name}')
 
@@ -31,7 +31,7 @@ if __name__ == '__main__':
         k_bag.append(k)
         # print(kv.shape)
         cnt += 1
-        if cnt > 2:
+        if cnt > 1:
             break
 
     k_bag_tensor = np.vstack(k_bag)

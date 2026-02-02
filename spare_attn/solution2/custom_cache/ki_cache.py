@@ -25,9 +25,10 @@ class FastCache(DynamicCache):
             key_index = self.quanter.quant(key_states)
             self.key_cache.append(key_index)
             self.value_cache.append(value_states.cpu())
-            return self.key_cache[layer_idx], self.value_cache[layer_idx]
+            return self.key_cache[layer_idx], self.value_cache[layer_idx],self.quanter.vectors
         else:
             key_index = self.quanter.quant(key_states)
             self.key_cache[layer_idx] = torch.cat([self.key_cache[layer_idx], key_index], dim=-2)
             self.value_cache[layer_idx] = torch.cat([self.value_cache[layer_idx], value_states.cpu()], dim=-2)
+
             return self.key_cache[layer_idx], self.value_cache[layer_idx],self.quanter.vectors

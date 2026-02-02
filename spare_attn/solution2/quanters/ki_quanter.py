@@ -94,3 +94,52 @@ class MultiGroupQuanter():
         torch.cuda.empty_cache()
         ki = torch.stack(results_list).transpose(0, 1)
         return ki.reshape(bsz, head, l, self.centroids_group_count)
+
+
+class FastTorchQuanter():
+    def __init__(self, vectors):
+        self.dims = vectors.shape[-1]
+        print(f'use quant shape is {vectors.shape} dims {self.dims}')
+        self.C = vectors
+        self.sumc = (vectors ** 2).sum(dim=1)
+        self.ki_dtype=torch.int16
+    def quant(self, k, j):
+        bsz=100000
+        # bsz len 576
+        all_len = k.size(0)
+        sumc = self.sumc
+        ki = torch.randint(low=0,high=8192,size=(all_len,),dtype=self.ki_dtype,device=k.device)
+        return ki, j
+
+class ShareQuanter():
+    def __init__(self, p, C_device, C_dtype, dims=0):
+        self.qs = []
+        self.rebuild_kv = []
+        if isinstance(p, str):
+            vectors = np.load(p)
+        else:
+            vectors = p
+        print(f"cids shape is {vectors.shape}")
+        self.dims=vectors.shape[-1]
+        self.group= int(128/self.dims)
+        vectors = torch.from_numpy(vectors).to(C_device).to(C_dtype)
+        self.vectors =vectors.repeat(self.group,1,1)
+        #self.qs = TorchQuanter(vectors)
+        self.qs = FastTorchQuanter(vectors)
+
+    def quant(self, compressed_k):
+
+        bsz, head, l, dim = compressed_k.shape
+        compressed_k = compressed_k.reshape(-1, self.group, self.dims)
+        results_list = [None] * self.group
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.group) as executor:
+            futures = [executor.submit(self.qs.quant, compressed_k[:, i, :], i)
+                       for i in range(self.group)]
+
+            for future in concurrent.futures.as_completed(futures):
+                rbk_cuda, i = future.result()
+                results_list[i] = rbk_cuda
+        del compressed_k
+        torch.cuda.empty_cache()
+        ki = torch.stack(results_list).transpose(0, 1)
+        return ki.reshape(bsz, head, l, self.group)

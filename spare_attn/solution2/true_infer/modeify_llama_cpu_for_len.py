@@ -18,7 +18,7 @@ from transformers.models.llama.modeling_llama import (
     BaseModelOutputWithPast,
 )
 from flash_attn import flash_attn_func, flash_attn_with_kvcache
-from spare_attn.solution2.true_infer.fast_qkt import fast_qK, fast_fwd, sparse_v_sum
+from spare_attn.solution2.true_infer.fast_qkt import fast_qK, fast_fwd, sparse_v_sum,fast_fwd_for_len
 import time
 
 def enable_llama_approx_attention_eval(
@@ -99,45 +99,19 @@ def llama_approx_attention_forward(
     # bsz len head dim
 
     # decode
-    if query_states.shape[1] == 1:
-        s4 = time.time()
-        key_states, value_states, C = past_key_value.update(key_states.transpose(1, 2),
-                                                            value_states.transpose(1, 2),
-                                                            self.layer_idx)
-        s5 = time.time()
-        query_states=query_states.transpose(1, 2)
-        attn_output = fast_fwd(query_states, key_states, value_states, C, th=attn_sum)
-        s6= time.time()
-        #print(f'layer {self.layer_idx} decode use time {s6 - s5} quant use {s5 - s4}')
-        # attn_output = flash_attn_func(
-        #     query_states,
-        #     key_states,
-        #     value_states,
-        #     causal=True,
-        #     dropout_p=0.0,
-        # )
-        # print((attn_output-attn_output1)/attn_output)
-    else:
-        s1=time.time()
-        attn_output = flash_attn_func(
-            query_states,
-            key_states,
-            value_states,
-            causal=True,
-            dropout_p=0.0,
-        )
-        s2=time.time()
-        past_key_value.update(key_states.transpose(1, 2),
-                              value_states.transpose(1, 2),
-                              self.layer_idx)
-        s3=time.time()
-        #print(f'layer {self.layer_idx} prefiling use time {s2-s1} quant use {s3-s2} shape {past_key_value.value_cache[self.layer_idx].shape}')
-        # key_states = key_states.transpose(1, 2)
-        # value_states = value_states.transpose(1, 2)
+    s1 = time.time()
+    k, v, C= past_key_value.update(key_states.transpose(1, 2),value_states.transpose(1, 2),
+                                                        self.layer_idx)
+    s2 = time.time()
+    #print(f'offloat and quant use {s2-s1}')
+    query_states = query_states.transpose(1, 2)
+    attn_output = fast_fwd_for_len(query_states, k, v, C, th=attn_sum)
+    s3 = time.time()
+    #print(f'prefill use {s3 - s2}')
 
     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
     attn_output = self.o_proj(attn_output)
-
+    torch.cuda.empty_cache()
     if not output_attentions:
         attn_weights = None
     return attn_output, attn_weights, past_key_value

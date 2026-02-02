@@ -20,6 +20,24 @@ def fast_qK(q, ki, C):
     attention_probs = torch.softmax(attention_scores, dim=-1, dtype=torch.float32).to(q.dtype)
     return attention_probs
 
+def fast_qK_gqa(q, ki, C):
+    bsz,head,qn,_=q.shape
+    g,cid_len,dim=C.shape
+    _,khead,k_len,_=ki.shape
+    q = q.reshape(bsz * head,qn, g, dim).transpose(-2, -3)
+    q_ = torch.matmul(q, C.transpose(-1, -2))
+    #bsz*head,len,g,C_len
+    q_=q_.transpose(-2, -3).reshape(bsz, head, qn, g, cid_len)
+    q_expand = q_[:, :,:, None, :, :].expand(-1, -1, -1, k_len, -1, -1)
+    ki=ki[:, :, None, :, :].expand(bsz, khead, int(head/khead), k_len, g)
+    ki=ki.reshape(bsz, head, k_len, g)
+    #bsz ,head,qn,kn,g,1
+    ki_expand = ki.unsqueeze(-3).unsqueeze(-1).expand(-1, -1, qn, -1, -1, -1)
+    ki_expand=ki_expand.to(torch.int64)
+    qk = torch.gather(q_expand, dim=-1, index=ki_expand).squeeze(-1)
+    attention_scores = qk.sum(-1) * 0.088388
+    attention_probs = torch.softmax(attention_scores, dim=-1, dtype=torch.float32).to(q.dtype)
+    return attention_probs
 
 def sparse_v_sum(atten, values, th):
     bsz, head, q_len, k_len = atten.shape
@@ -37,8 +55,9 @@ def sparse_v_sum(atten, values, th):
 
 def sparse_v_sum_v2(attention_probs,value_states,sum_value):
     if sum_value>=1:
+        attention_probs = attention_probs.cpu()
         attn_output = torch.matmul(attention_probs, value_states)
-        return attn_output
+        return attn_output.cuda()
     attention_probs=attention_probs.squeeze(0)
     value_states = value_states.squeeze(0)
     sorted_indices = torch.argsort(attention_probs, descending=True, dim=-1)
@@ -81,3 +100,26 @@ def fast_fwd(q, ki, values,C,th):
     attn_out = sparse_v_sum_v2(attention_probs, values, th)
     return attn_out
 
+
+def fast_qK_sim(q, ki, C):
+    bsz,head,qn,_=q.shape
+    g,cid_len,dim=C.shape
+    _,khead,k_len,_=ki.shape
+    attention_probs = torch.rand((bsz,head,qn,k_len),device='cuda',dtype=q.dtype)
+    #attention_probs = torch.softmax(attention_scores, dim=-1, dtype=torch.float32).to(q.dtype)
+    return attention_probs
+
+def fast_fwd_for_len(q, ki, values,C,th):
+    # attention_probs = fast_qK_sim(q, ki, C)
+    # attention_probs = attention_probs.cpu()
+    batch, num_key_value_heads, slen, head_dim = values.shape
+
+    values = values[:, :, None, :, :].expand(batch, num_key_value_heads, 4, slen, head_dim)
+    values = values.reshape(batch, 32, slen, head_dim)
+
+    end = int(0.16 * slen)
+    # attention_probs = attention_probs[:, :, :, :end]
+    values= values[:, :, :end,:]
+    #attn_out = torch.matmul(attention_probs, values)
+    attn_out = torch.zeros(q.shape, device='cuda', dtype=q.dtype)
+    return attn_out

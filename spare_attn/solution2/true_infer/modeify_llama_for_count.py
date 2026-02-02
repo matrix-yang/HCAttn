@@ -5,6 +5,8 @@ from torch import nn
 import types
 from duo_attn.patch.tuple_kv_cache import enable_tuple_kv_cache, enable_tuple_kv_cache_for_llama
 import numpy as np
+from transformers.cache_utils import DynamicCache
+
 
 from transformers.models.llama.modeling_llama import (
     LlamaForCausalLM,
@@ -56,6 +58,23 @@ def warp_forward(attn_sum, radio_bag):
 
     return new_func
 
+import torch
+import numpy as np
+from flash_attn import flash_attn_func, flash_attn_with_kvcache
+import time
+
+def count_v_radio(query_states_ori, key_states_ori, sum_value, radio_bag):
+    query_states = query_states_ori.transpose(1, 2).squeeze(0)
+    key_states = key_states_ori.transpose(1, 2).squeeze(0)
+    attention_scores = torch.matmul(query_states, key_states.transpose(-1, -2)) * 0.088388
+    atten = torch.softmax(attention_scores, dim=-1, dtype=torch.float32).to(query_states.dtype)
+    sort_attn, idx = torch.sort(atten, dim=-1, descending=True)
+    cum_sum = torch.cumsum(sort_attn, dim=-1)
+    topN = (cum_sum > sum_value).int().argmax(dim=-1).max()
+    radio=topN/key_states.shape[1]
+    radio_bag.append(radio.item())
+
+
 
 def llama_approx_attention_forward(
         self,
@@ -78,15 +97,6 @@ def llama_approx_attention_forward(
     key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
     value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
 
-    # new data structure for past_key_value
-    # past_key_value = (full_KV, streaming_KV)
-    # full_KV: (2 x bsz, num_full_key_value_heads, full_kv_seq_len, head_dim)
-    # streaming_KV: (2 x bsz, num_streaming_key_value_heads, cache_size, head_dim)
-
-    # kv_seq_len = key_states.shape[1]
-    # if past_key_value is not None:
-    #     kv_seq_len += past_key_value[0].shape[2]
-
     cos, sin = self.rotary_emb(value_states, position_ids)
     query_states, key_states = apply_rotary_pos_emb(
         query_states,
@@ -97,28 +107,17 @@ def llama_approx_attention_forward(
     )
 
     # bsz len head dim
+    if past_key_value is not None:
+        # sin and cos are specific to RoPE models; cache_position needed for the static cache
+        cache_kwargs = {"sin": sin, "cos": cos}
+        key_states, value_states = past_key_value.update(key_states.transpose(1, 2), value_states.transpose(1, 2), self.layer_idx, cache_kwargs)
+        key_states = key_states.transpose(1, 2)
+        value_states = value_states.transpose(1, 2)
 
     # decode
     if query_states.shape[1] == 1:
-        s4 = time.time()
-        key_states, value_states, C = past_key_value.update(key_states.transpose(1, 2),
-                                                            value_states.transpose(1, 2),
-                                                            self.layer_idx)
-        s5 = time.time()
-        query_states=query_states.transpose(1, 2)
-        attn_output = fast_fwd(query_states, key_states, value_states, C, th=attn_sum)
-        s6= time.time()
-        #print(f'layer {self.layer_idx} decode use time {s6 - s5} quant use {s5 - s4}')
-        # attn_output = flash_attn_func(
-        #     query_states,
-        #     key_states,
-        #     value_states,
-        #     causal=True,
-        #     dropout_p=0.0,
-        # )
-        # print((attn_output-attn_output1)/attn_output)
-    else:
-        s1=time.time()
+        count_v_radio(query_states,key_states,attn_sum,radio_bag[self.layer_idx])
+        #attn_output = fast_fwd(query_states, key_states, value_states, C, th=attn_sum)
         attn_output = flash_attn_func(
             query_states,
             key_states,
@@ -126,14 +125,15 @@ def llama_approx_attention_forward(
             causal=True,
             dropout_p=0.0,
         )
-        s2=time.time()
-        past_key_value.update(key_states.transpose(1, 2),
-                              value_states.transpose(1, 2),
-                              self.layer_idx)
-        s3=time.time()
-        #print(f'layer {self.layer_idx} prefiling use time {s2-s1} quant use {s3-s2} shape {past_key_value.value_cache[self.layer_idx].shape}')
-        # key_states = key_states.transpose(1, 2)
-        # value_states = value_states.transpose(1, 2)
+        # print((attn_output-attn_output1)/attn_output)
+    else:
+        attn_output = flash_attn_func(
+            query_states,
+            key_states,
+            value_states,
+            causal=True,
+            dropout_p=0.0,
+        )
 
     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
     attn_output = self.o_proj(attn_output)
@@ -192,11 +192,6 @@ def old_llama_model_forward(
             past_key_values = DynamicCache()
         else:
             past_key_values = DynamicCache.from_legacy_cache(past_key_values)
-            logger.warning_once(
-                "We detected that you are passing `past_key_values` as a tuple of tuples. This is deprecated and "
-                "will be removed in v4.47. Please convert your cache or use an appropriate `Cache` class "
-                "(https://huggingface.co/docs/transformers/kv_cache#legacy-cache-format)"
-            )
 
     if cache_position is None:
         past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
