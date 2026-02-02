@@ -1,5 +1,6 @@
+import os
 import sys
-sys.path.append('/mnt/root/duo-attention')
+sys.path.append(os.getcwd())
 import torch
 import numpy as np
 from fast_qkt import fast_fwd
