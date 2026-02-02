@@ -1,4 +1,4 @@
-import faiss
+#import faiss_gpu
 import numpy as np
 import torch
 import threading
@@ -68,7 +68,10 @@ class MultiGroupQuanter():
             vectors = p
         self.centroids_group_count = vectors.shape[0]
         self.dims = vectors.shape[-1]
-        self.vectors = torch.from_numpy(vectors).to(C_device).to(C_dtype)
+        if type(vectors) == np.ndarray:
+            self.vectors = torch.from_numpy(vectors).to(C_device).to(C_dtype)
+        else:
+            self.vectors = vectors.to(C_device).to(C_dtype)
         # print("centroids_group_count: ", self.centroids_group_count)
         # p = "/ms/FM/ydq/notebook/duo_attn/quant/cluster/setting2_16_256_8.npy" # 16,256,8
         for i in tqdm(range(self.centroids_group_count)):

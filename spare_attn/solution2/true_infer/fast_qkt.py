@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from flash_attn import flash_attn_func, flash_attn_with_kvcache
+#from flash_attn import flash_attn_func, flash_attn_with_kvcache
 import time
 
 
