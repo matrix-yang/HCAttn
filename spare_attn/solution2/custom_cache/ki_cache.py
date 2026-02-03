@@ -7,6 +7,8 @@ class FastCache(DynamicCache):
     def __init__(self, quanter):
         super().__init__()
         self.quanter = quanter
+        self.key_cache=[]
+        self.value_cache=[]    
 
     def update(
             self,
