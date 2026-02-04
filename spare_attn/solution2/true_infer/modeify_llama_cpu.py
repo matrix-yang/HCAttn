@@ -114,13 +114,15 @@ def llama_approx_attention_forward(
     # decode
     if query_states.shape[1] == 1:
         s4 = time.time()
-        key_states = key_states.transpose(1, 2)
-        value_states = value_states.transpose(1, 2)
-        key_index, value_states, C = past_key_value.update(key_states, value_states, self.layer_idx)
+        key_states1 = key_states.transpose(1, 2)
+        value_states1 = value_states.transpose(1, 2)
+        key_index, value_states, C =  past_key_value.update(key_states1, value_states1, self.layer_idx)
+        #key_index, value_states, C = past_key_value.get_processed_kvcache(self.layer_idx)
         s5 = time.time()
         query_states=query_states.transpose(1, 2)
         attn_output = fast_fwd(query_states, key_index, value_states, C, th=attn_sum)
         s6= time.time()
+        #past_key_value.async_quant_and_transfer(key_states1, value_states1, self.layer_idx)
         #print(f'layer {self.layer_idx} decode use time {s6 - s5} quant use {s5 - s4}')
         # attn_output = flash_attn_func(
         #     query_states,
@@ -140,7 +142,7 @@ def llama_approx_attention_forward(
             dropout_p=0.0,
         )
         s2=time.time()
-        past_key_value.update(key_states.transpose(1, 2),
+        past_key_value.async_quant_and_transfer(key_states.transpose(1, 2),
                               value_states.transpose(1, 2),
                               self.layer_idx)
         s3=time.time()

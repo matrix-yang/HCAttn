@@ -3,36 +3,8 @@ import numpy as np
 import torch
 import threading
 import concurrent
+import os
 from tqdm import tqdm
-
-
-def load_index(vectors, dimension):
-    index = faiss.IndexFlatL2(dimension)
-    res = faiss.StandardGpuResources()
-    res.setTempMemory(16 * 1024 * 1024)
-    gpu_index = faiss.index_cpu_to_gpu(res, 0, index)
-    gpu_index.add(vectors)
-    return gpu_index, vectors
-
-
-class KIQuanter():
-    def __init__(self, vectors):
-        self.dims = vectors.shape[-1]
-        print(f'use quant shape is {vectors.shape} dims {self.dims}')
-        self.gpu_index, self.vectors = load_index(vectors, self.dims)
-
-    def quant(self, key_tensor, j):
-        # bsz len 576
-        device = key_tensor.device
-        dtype = key_tensor.dtype
-        k = key_tensor.cpu().to(torch.float).numpy()
-        batch = 32 * 32 * 32 * 1024
-        all_indices = np.zeros(k.shape[0], dtype=np.int16)
-        for i in range(0, k.shape[0], batch):
-            distances, indices = self.gpu_index.search(k[i:i + batch], 1)
-            all_indices[i:i + batch] = indices.reshape(-1)
-        all_indices = torch.from_numpy(all_indices).to(torch.int16).to(device)
-        return all_indices, j
 
 
 class TorchQuanter():
@@ -82,21 +54,31 @@ class MultiGroupQuanter():
             self.qs.append(test_quan)
 
     def quant(self, compressed_k):
-
         bsz, head, l, dim = compressed_k.shape
-        compressed_k = compressed_k.reshape(-1, self.centroids_group_count, self.dims)
+        
+        # 直接使用原始张量的视图，避免不必要的内存复制
+        # 计算每个分组的输入张量
         results_list = [None] * self.centroids_group_count
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.centroids_group_count) as executor:
-            futures = [executor.submit(self.qs[i].quant, compressed_k[:, i, :], i)
+        
+        # 优化并行处理，使用更高效的线程池
+        # 根据系统的CPU核心数动态调整线程数
+        cpu_count = os.cpu_count() or 8
+        max_workers = min(self.centroids_group_count, cpu_count, 16)  # 限制最大线程数，避免过度线程切换
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 为每个分组创建一个子张量，使用 reshape 确保内存连续
+            reshaped_k = compressed_k.reshape(-1, dim)
+            futures = [executor.submit(self.qs[i].quant, 
+                                      reshaped_k[:, i*self.dims:(i+1)*self.dims], 
+                                      i)
                        for i in range(self.centroids_group_count)]
 
             for future in concurrent.futures.as_completed(futures):
                 rbk_cuda, i = future.result()
                 results_list[i] = rbk_cuda
-        del compressed_k
-        torch.cuda.empty_cache()
+        
+        # 移除不必要的内存清理
         ki = torch.stack(results_list).transpose(0, 1)
-        return ki.reshape(bsz, head, l, self.centroids_group_count)
+        return ki.view(bsz, head, l, self.centroids_group_count)
 
 
 class FastTorchQuanter():
@@ -107,11 +89,16 @@ class FastTorchQuanter():
         self.sumc = (vectors ** 2).sum(dim=1)
         self.ki_dtype=torch.int16
     def quant(self, k, j):
-        bsz=100000
-        # bsz len 576
+        # 使用向量化操作替代循环，提高计算效率
         all_len = k.size(0)
         sumc = self.sumc
-        ki = torch.randint(low=0,high=8192,size=(all_len,),dtype=self.ki_dtype,device=k.device)
+        
+        # 直接对整个输入张量进行操作
+        sumb = (k ** 2).sum(dim=1, keepdim=True)
+        dot_product = torch.matmul(k, self.C.t())
+        dist = sumb + sumc - 2 * dot_product
+        ki = torch.argmin(dist, dim=-1).to(self.ki_dtype)
+        
         return ki, j
 
 class ShareQuanter():
@@ -131,18 +118,27 @@ class ShareQuanter():
         self.qs = FastTorchQuanter(vectors)
 
     def quant(self, compressed_k):
-
         bsz, head, l, dim = compressed_k.shape
-        compressed_k = compressed_k.reshape(-1, self.group, self.dims)
+        
+        # 直接使用原始张量的视图，避免不必要的内存复制
         results_list = [None] * self.group
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.group) as executor:
-            futures = [executor.submit(self.qs.quant, compressed_k[:, i, :], i)
+        
+        # 优化并行处理
+        # 根据系统的CPU核心数动态调整线程数
+        cpu_count = os.cpu_count() or 8
+        max_workers = min(self.group, cpu_count, 16)  # 限制最大线程数
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 为每个分组创建一个子张量，使用 reshape 确保内存连续
+            reshaped_k = compressed_k.reshape(-1, dim)
+            futures = [executor.submit(self.qs.quant, 
+                                      reshaped_k[:, i*self.dims:(i+1)*self.dims], 
+                                      i)
                        for i in range(self.group)]
 
             for future in concurrent.futures.as_completed(futures):
                 rbk_cuda, i = future.result()
                 results_list[i] = rbk_cuda
-        del compressed_k
-        torch.cuda.empty_cache()
+        
+        # 移除不必要的内存清理
         ki = torch.stack(results_list).transpose(0, 1)
-        return ki.reshape(bsz, head, l, self.group)
+        return ki.view(bsz, head, l, self.group)
