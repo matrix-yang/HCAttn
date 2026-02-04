@@ -1,5 +1,11 @@
 import torch
+import os
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# 强制使用 SDPA 注意力计算
+# 禁用 Flash Attention 和其他优化
+os.environ["TRANSFORMERS_FORCE_SDPA"] = "1"
+os.environ["FLASH_ATTENTION_DISABLE"] = "1"
 
 # 模型路径
 MODEL_PATH = "/nfs/FM/ydq/model_zoo/Llama-2-7b-chat-hf"
@@ -30,9 +36,10 @@ class LlamaInference:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             dtype=torch.float16,  # 使用半精度浮点数以节省内存
-            device_map="auto"  # 自动分配设备
+            device_map=self.device,  # 自动分配设备
+            attn_implementation="eager" 
         )
-        
+        # attn_implementation="sdpa"  # 强制使用 SDPA 注意力计算
         # 设置模型为评估模式
         self.model.eval()
     
