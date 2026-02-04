@@ -20,7 +20,5 @@ cd project_root
 python3 ./spare_attn/solution2/true_infer/llama_forward_ki.py
 
 # 与原生的对比测试
-```
-cd project_root
 python3 ./spare_attn/solution2/true_infer/llama_forward_compare.py
 ```
