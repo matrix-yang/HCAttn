@@ -36,40 +36,51 @@ class LlamaInference:
         # 设置模型为评估模式
         self.model.eval()
     
-    def generate(self, prompt, max_new_tokens=100, temperature=0.7, top_p=0.95):
+    def generate(self, prompt, max_new_tokens=100):
         """
         生成文本
         
         Args:
             prompt: 输入提示文本
             max_new_tokens: 最大生成 token 数
-            temperature: 采样温度
-            top_p: 核采样参数
         
         Returns:
             生成的文本
         """
         # 对输入进行编码
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        input_ids = inputs['input_ids']
+        
+        # 存储生成的 token
+        generated_tokens = []
         
         # 生成文本
         with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                do_sample=True,  # 启用采样
-                eos_token_id=self.tokenizer.eos_token_id,  # 结束标记
-                pad_token_id=self.tokenizer.pad_token_id  # 填充标记
-            )
+            for _ in range(max_new_tokens):
+                # 调用 model.forward
+                outputs = self.model(
+                    input_ids=input_ids,
+                    use_cache=True
+                )
+                
+                # 获取 logits
+                logits = outputs.logits[:, -1, :]
+                
+                # 使用贪婪解码
+                next_token = torch.argmax(logits, dim=-1, keepdim=True)
+                
+                # 检查是否生成了结束标记
+                if next_token.item() == self.tokenizer.eos_token_id:
+                    break
+                
+                # 添加到生成的 token 列表
+                generated_tokens.append(next_token.item())
+                
+                # 更新 input_ids 为下一个 token
+                input_ids = next_token
         
         # 解码生成的文本
-        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        
-        # 移除输入提示，只返回生成的部分
-        if prompt in generated_text:
-            generated_text = generated_text[len(prompt):]
+        generated_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
         
         return generated_text.strip()
 

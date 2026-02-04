@@ -58,7 +58,11 @@ class LlamaInferenceKI:
         # 实际使用时，需要根据具体情况调整
         # 这里使用随机向量作为示例
         import numpy as np
-        vectors = np.load("spare_attn/C_npy/dim4_equal_4bits_4096_32K_vec2.npy")
+        import os
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        vectors_path = os.path.join(project_root, "spare_attn", "C_npy", "dim4_equal_4bits_4096_32K_vec2.npy")
+        vectors = np.load(vectors_path)
         vectors = torch.from_numpy(vectors).unsqueeze(0).repeat(32, 1, 1).to(self.device)
         self.quanter = MultiGroupQuanter(vectors, self.device, torch.float16)
         self.attn_sum = attn_sum
