@@ -1,6 +1,7 @@
 import torch
 from transformers.cache_utils import DynamicCache
 from typing import Any, Dict, List, Optional, Tuple, Union
+import threading
 
 
 class FastCache(DynamicCache):
@@ -18,6 +19,10 @@ class FastCache(DynamicCache):
         self.quant_results = []
         # 存储每个层的处理状态
         self.processing_states = []
+        # 存储每个层的量化线程
+        self.quant_threads = []
+        # 存储每个层的量化线程结果
+        self.quant_thread_results = []
 
     def async_quant_and_transfer(
             self,
@@ -42,23 +47,31 @@ class FastCache(DynamicCache):
                 self.transfer_events.append(None)
                 self.quant_results.append(None)
                 self.processing_states.append(False)
+                self.quant_threads.append(None)
+                self.quant_thread_results.append(None)
         
         # 标记为处理中
         self.processing_states[layer_idx] = True
         
-        # 异步量化
-        with torch.cuda.stream(self.stream):
-            key_index = self.quanter.quant(key_states)
-            
-            # 异步将 value_states 传输到 CPU
-            value_cpu = torch.empty_like(value_states, device='cpu')
-            value_cpu.copy_(value_states, non_blocking=True)
-            
-            # 记录结果
-            event = torch.cuda.Event()
-            event.record(self.stream)
-            
-            self.quant_results[layer_idx] = (key_index, value_cpu, event)
+        # 创建量化函数
+        def quant_function():
+            with torch.cuda.stream(self.stream):
+                key_index = self.quanter.quant(key_states)
+                
+                # 异步将 value_states 传输到 CPU
+                value_cpu = torch.empty_like(value_states, device='cpu')
+                value_cpu.copy_(value_states, non_blocking=True)
+                
+                # 记录结果
+                event = torch.cuda.Event()
+                event.record(self.stream)
+                
+                self.quant_thread_results[layer_idx] = (key_index, value_cpu, event)
+        
+        # 创建并启动量化线程
+        quant_thread = threading.Thread(target=quant_function)
+        quant_thread.start()
+        self.quant_threads[layer_idx] = quant_thread
 
     def get_processed_kvcache(
             self,
@@ -80,9 +93,13 @@ class FastCache(DynamicCache):
                 raise ValueError(f"No cache initialized for layer {layer_idx}")
             return self.key_cache[layer_idx], self.value_cache[layer_idx], self.vectors
         
+        # 等待量化线程完成
+        if self.quant_threads[layer_idx] is not None:
+            self.quant_threads[layer_idx].join()
+        
         # 等待异步操作完成
-        if self.quant_results[layer_idx] is not None:
-            key_index, value_cpu, event = self.quant_results[layer_idx]
+        if self.quant_thread_results[layer_idx] is not None:
+            key_index, value_cpu, event = self.quant_thread_results[layer_idx]
             event.synchronize()
         else:
             raise ValueError(f"No quant results for layer {layer_idx}")
