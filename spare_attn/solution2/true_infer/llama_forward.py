@@ -77,8 +77,8 @@ class LlamaInference:
                 next_token = torch.argmax(logits, dim=-1, keepdim=True)
                 
                 # 检查是否生成了结束标记
-                if next_token.item() == self.tokenizer.eos_token_id:
-                    break
+                # if next_token.item() == self.tokenizer.eos_token_id:
+                #     break
                 
                 # 添加到生成的 token 列表
                 generated_tokens.append(next_token.item())
