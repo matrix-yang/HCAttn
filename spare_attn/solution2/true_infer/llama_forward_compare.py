@@ -12,10 +12,7 @@ from llama_forward_ki import LlamaInferenceKI
 
 # 测试提示
 test_prompts = [
-    "Hello, how are you today?",
-    "Explain quantum computing in simple terms",
-    "Write a short poem about artificial intelligence",
-    "What are the benefits of using renewable energy?"
+    "Hello, how are you today?"*100,
 ]
 
 # 最大生成 token 数
@@ -110,17 +107,17 @@ def main():
     print("=" * 80)
     
     print(f"Original model average time: {original_avg_time:.4f} seconds")
-    print(f"Original model average tokens/s: {original_avg_tokens_per_second:.2f}")
+    #print(f"Original model average tokens/s: {original_avg_tokens_per_second:.2f}")
     print(f"KI model average time: {ki_avg_time:.4f} seconds")
-    print(f"KI model average tokens/s: {ki_avg_tokens_per_second:.2f}")
+    #print(f"KI model average tokens/s: {ki_avg_tokens_per_second:.2f}")
     
     # 计算加速比
     speedup = original_avg_time / ki_avg_time
     print(f"\nSpeedup: {speedup:.2f}x faster with KI cache")
     
     # 计算性能提升百分比
-    performance_gain = (ki_avg_tokens_per_second - original_avg_tokens_per_second) / original_avg_tokens_per_second * 100
-    print(f"Performance gain: {performance_gain:.2f}% increase in tokens/s")
+    #performance_gain = (ki_avg_tokens_per_second - original_avg_tokens_per_second) / original_avg_tokens_per_second * 100
+    #print(f"Performance gain: {performance_gain:.2f}% increase in tokens/s")
 
 if __name__ == "__main__":
     main()
