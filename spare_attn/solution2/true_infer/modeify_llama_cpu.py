@@ -17,6 +17,30 @@ from flash_attn import flash_attn_func, flash_attn_with_kvcache
 from spare_attn.solution2.true_infer.fast_qkt import fast_qK, fast_fwd, sparse_v_sum
 import time
 
+# 时间统计
+attention_time_stats = {
+    'total': 0,
+    'prefill': {
+        'total': 0,
+        'quant': 0,
+        'attention': 0,
+        'other': 0
+    },
+    'decode': {
+        'total': 0,
+        'quant': 0,
+        'attention': 0,
+        'other': 0
+    },
+    'quant': 0,
+    'offload': 0,
+    'attention': 0,
+    'other': 0
+}
+
+# 层统计
+layer_time_stats = []
+
 def enable_llama_approx_attention_eval(
         model: LlamaForCausalLM, attn_sum, radio_bag
 ):
@@ -70,6 +94,8 @@ def llama_approx_attention_forward(
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+    layer_start = time.time()
+    
     # 检查hidden_states的形状
     if hidden_states.dim() == 2:
         # 如果只有2个维度，添加batch维度
@@ -132,6 +158,31 @@ def llama_approx_attention_forward(
         #     dropout_p=0.0,
         # )
         # print((attn_output-attn_output1)/attn_output)
+        
+        # 计算时间
+        quant_time = s5 - s4
+        attn_time = s6 - s5
+        other_time = (time.time() - layer_start) - quant_time - attn_time
+        
+        # 更新时间统计
+        attention_time_stats['total'] += time.time() - layer_start
+        attention_time_stats['quant'] += quant_time
+        attention_time_stats['attention'] += attn_time
+        attention_time_stats['other'] += other_time
+        attention_time_stats['decode']['total'] += time.time() - layer_start
+        attention_time_stats['decode']['quant'] += quant_time
+        attention_time_stats['decode']['attention'] += attn_time
+        attention_time_stats['decode']['other'] += other_time
+        
+        # 记录层统计
+        layer_time_stats.append({
+            'layer': self.layer_idx,
+            'time': time.time() - layer_start,
+            'quant': quant_time,
+            'offload': 0,
+            'attention': attn_time,
+            'phase': 'decode'
+        })
     else:
         s1=time.time()
         attn_output = flash_attn_func(
@@ -149,6 +200,31 @@ def llama_approx_attention_forward(
         #print(f'layer {self.layer_idx} prefiling use time {s2-s1} quant use {s3-s2} shape {past_key_value.value_cache[self.layer_idx].shape}')
         # key_states = key_states.transpose(1, 2)
         # value_states = value_states.transpose(1, 2)
+        
+        # 计算时间
+        attn_time = s2 - s1
+        quant_time = s3 - s2
+        other_time = (time.time() - layer_start) - quant_time - attn_time
+        
+        # 更新时间统计
+        attention_time_stats['total'] += time.time() - layer_start
+        attention_time_stats['quant'] += quant_time
+        attention_time_stats['attention'] += attn_time
+        attention_time_stats['other'] += other_time
+        attention_time_stats['prefill']['total'] += time.time() - layer_start
+        attention_time_stats['prefill']['quant'] += quant_time
+        attention_time_stats['prefill']['attention'] += attn_time
+        attention_time_stats['prefill']['other'] += other_time
+        
+        # 记录层统计
+        layer_time_stats.append({
+            'layer': self.layer_idx,
+            'time': time.time() - layer_start,
+            'quant': quant_time,
+            'offload': 0,
+            'attention': attn_time,
+            'phase': 'prefill'
+        })
 
     attn_output = attn_output.reshape(bsz, q_len, hidden_size)
     attn_output = self.o_proj(attn_output)
